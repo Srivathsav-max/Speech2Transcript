@@ -1,0 +1,13 @@
+# virtual environment
+s2t
+
+# outputs
+Speech2Transcript/outputs
+
+# pycache
+Speech2Transcript/__pycache__
+
+#audio files
+audios
+.python-version
+.DS_Store
