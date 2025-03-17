@@ -3,7 +3,7 @@ import torch
 import logging as log
 import argparse
 from diarization import DiarizationPipeline 
-from utils import export_to_rttm, export_to_json, merge_speakers
+from utils import export_to_rttm, export_to_json, merge_speakers, get_device, audio_devices
 from transcription import TranscriptionPipeline
 
 log.basicConfig(
@@ -17,16 +17,8 @@ def main():
         formatter_class= argparse.ArgumentDefaultsHelpFormatter 
     )
 
-    def get_device():
-        if torch.cuda.is_available():
-            return "cuda"
-        elif torch.backends.mps.is_available():
-            return "mps"
-        else:
-            return "cpu"
 
-
-    parser.add_argument("--audio", "-a", type=str, required=True, help="Path to the audio file")
+    parser.add_argument("--audio", "-a", type=str, help="Path to the audio file")
     parser.add_argument("--output", "-o", default="./outputs", help="Path to the output directory")
     parser.add_argument("--use_auth_token", "-hf_token", default=None, help="Hugging Face authentication token")
     parser.add_argument("--device", "-d", default=get_device(), choices=["cuda", "mps", "cpu"], help="Device to use")
@@ -52,41 +44,52 @@ def main():
     format_group = parser.add_argument_group('Output Formats')
     format_group.add_argument("--format", "-f", choices=["rttm", "json", "csv", "all"], default="all", help="Output format(s)")
 
+    format_group = parser.add_argument_group('Real Time Audio')
+    format_group.add_argument("--list_devices", action="store_true", help="List available audio devices")
+
     args = parser.parse_args()
 
-    if not os.path.exists(args.audio):
-        log.error("Audio File Not Found: %s", args.audio)
+    if args.audio:
+        if not os.path.exists(args.audio):
+            log.error("Audio File Not Found: %s", args.audio)
+            return
+
+        os.makedirs(args.output, exist_ok=True)
+
+        basename = os.path.splitext(os.path.basename(args.audio))[0]
+
+        log.info("Initializing Diarization Pipeline")
+        log.info("Using Device: %s", args.device)
+
+    if args.list_devices:
+        devices = audio_devices()
+        for device in devices:
+            log.info("Device Index: %s, Name: %s, Max Channels: %s", device["index"], device["name"], device["channels"])
         return
-
-    os.makedirs(args.output, exist_ok=True)
-
-    basename = os.path.splitext(os.path.basename(args.audio))[0]
-
-    log.info("Initializing Diarization Pipeline")
-    log.info("Using Device: %s", args.device)
     
-    diarization = DiarizationPipeline(
-        model_name=args.diarization_model,
-        use_auth_token=args.use_auth_token,
-        device=args.device
-    )
+    if args.diarize:
+        diarization = DiarizationPipeline(
+            model_name=args.diarization_model,
+            use_auth_token=args.use_auth_token,
+            device=args.device
+        )
 
-    log.info("Processing Audio: %s", args.audio)
+        log.info("Processing Audio: %s", args.audio)
 
-    diarization_results = diarization.process_audio(
-        args.audio,
-        num_speakers=args.num_speakers,
-        min_speakers=args.min_speakers,
-        max_speakers=args.max_speakers
-    )
+        diarization_results = diarization.process_audio(
+            args.audio,
+            num_speakers=args.num_speakers,
+            min_speakers=args.min_speakers,
+            max_speakers=args.max_speakers
+        )
 
-    # if args.merge_threshold:
-    #     diarization_results = merge_speakers(diarization_results, threshold=args.merge_threshold)
+        # if args.merge_threshold:
+        #     diarization_results = merge_speakers(diarization_results, threshold=args.merge_threshold)
 
-    num_speakers = diarization_results["speaker"].nunique()
-    total_duration = diarization_results["end"].max()
-    log.info("Detected %s speakers in Total Duration %.2f seconds", num_speakers if num_speakers else "Failed In Prediction", total_duration)
-    
+        num_speakers = diarization_results["speaker"].nunique()
+        total_duration = diarization_results["end"].max()
+        log.info("Detected %s speakers in Total Duration %.2f seconds", num_speakers if num_speakers else "Failed In Prediction", total_duration)
+        
     if args.transcribe:
         if diarization_results is None:
             log.error("Transcription requires diarization results. Please enable diarization.")

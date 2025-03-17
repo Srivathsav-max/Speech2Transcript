@@ -1,6 +1,17 @@
 import pandas as pd
+import torch
+import pyaudio 
 import json
-from typing import List
+from typing import List, Dict
+
+
+def get_device():
+    if torch.cuda.is_available():
+        return "cuda"
+    elif torch.backends.mps.is_available():
+        return "mps"
+    else:
+        return "cpu"
 
 def segments_to_df(segments: List, labels: List, speakers: List) -> pd.DataFrame:
 
@@ -137,3 +148,27 @@ def merge_speakers(diarization_df: pd.DataFrame, merge_threshold: float = 0.5) -
         })
     
     return pd.DataFrame(merged_segments)
+
+
+def audio_devices() -> List[Dict]:
+
+    pa = pyaudio.PyAudio()
+
+    devices = []
+
+    device_count = pa.get_device_count()
+    try: 
+        for i in range(device_count):
+            device_info = pa.get_device_info_by_index(i)
+            devices.append({
+                "index": i,
+                "name": device_info["name"],
+                "device_type": device_info["hostApi"],
+                "channels": device_info["maxInputChannels"],
+                "sample_rate": device_info["defaultSampleRate"]
+            })
+    finally:
+        pa.terminate()
+    
+    return devices
+
