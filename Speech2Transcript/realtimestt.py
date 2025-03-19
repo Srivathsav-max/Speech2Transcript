@@ -157,14 +157,10 @@ class RealTimeSTT:
         return pd.DataFrame([data])
     
     def _process_speech_segments(self):
-        """
-        Thread 2: Process speech segments for diarization with robust error handling
-        """
         print("Starting diarization thread...")
         
         while self.is_running:
             try:
-                # Process speech segments as they become available
                 if not self.speech_segments_queue.empty():
                     segment = self.speech_segments_queue.get(block=False)
                     
