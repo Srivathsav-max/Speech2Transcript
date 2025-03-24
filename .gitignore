@@ -1,5 +1,6 @@
 # virtual environment
 s2t
+env
 
 # outputs
 Speech2Transcript/outputs
