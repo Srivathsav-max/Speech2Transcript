@@ -1,0 +1,76 @@
+Telehealth Progress Note Template (CCM/RPM)
+
+1. Patient Information
+● Patient Name: ____________________________
+● Date of Birth: ____________________________
+● Medical Record #: ___________________
+
+2. Visit Information
+● Date of Call: ____________________________
+● Time of Call: ____________________________
+● Duration: _____ minutes (e.g., 5–10 minutes)
+● CMA (Care Manager): ____________________________
+(Include full name and credentials, e.g., Jane Smith, CMA)
+
+3. Reason for Contact
+● CCM/RPM Check-In:
+○ Chronic condition follow-up (e.g., diabetes, hypertension)
+○ Review of RPM data (e.g., blood pressure, glucose readings)
+○ Medication adherence review
+
+4. Current Status & Patient Report
+● Symptoms/Concerns:
+○ Patient states: "____________________________________"
+○ Any new or worsening symptoms? ___________________
+○ Any barriers to care (transportation, financial, etc.)? _______
+● Relevant Monitoring Data (if available):
+○ Latest RPM readings (e.g., BP, weight, blood glucose):
+■ Date/Time of reading: _______________
+■ Reading/value: _______________
+○ Patient's subjective feedback on devices/usage: "_____________" 
+
+5. Medication Review
+1. Current Medication List (as documented in EHR):
+○ Medication A (dose, frequency)
+○ Medication B (dose, frequency)
+○ Etc.
+2. Patient-Reported Adherence:
+○ Does the patient report taking meds as prescribed? _____
+○ Any missed doses? If yes, how often? _____
+○ Any side effects or concerns? "______________"
+3. Actions/Follow-Up:
+○ Noted discrepancies or questions: "______________"
+○ Escalated to supervising provider? (Yes/No) If yes, specify: "____________"
+
+6. Education/Reinforcement Provided
+● Reinforced the importance of medication adherence.
+● Reviewed healthy lifestyle tips (diet/exercise/stress management) as per care plan.
+● Provided standard instruction on device usage (if RPM devices involved).
+● Patient verbalized understanding: (Yes/No, details) _______________
+
+7. Plan & Next Steps
+● No immediate changes to care plan (CMA cannot alter plan independently).
+● Monitoring: Continue to record daily BP/glucose/weight.
+● Follow-up Appointment: _______________ (if instructed by provider).
+● Escalation: If readings exceed established parameters or symptoms worsen, patient
+instructed to contact the clinic or go to the ER if severe.
+● Provider Notification: CMA will notify Dr./NP/PA _______________ of significant
+findings.
+
+8. Time Tracking (CMS Requirements)
+● Total clinical staff time spent on this call: _____ minutes
+○ Document the nature of the time (e.g., "Patient assessment, medication review,
+care coordination, chart documentation").
+
+9. Additional Notes
+● Any special instructions, next scheduled contact, or tasks for other care team members.
+
+10. Signature & Credentials
+______________________________________ _____________________
+CMA Name (Printed)                     Date/Time
+______________________________________
+CMA Signature, Credential
+
+Disclaimer: This note is documented by a Certified Medical Assistant operating
+under the supervision of a licensed provider. All medical decision-making and any
+changes to the patient's treatment plan will be directed by the provider.
