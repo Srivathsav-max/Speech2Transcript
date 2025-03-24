@@ -8,6 +8,5 @@ Speech2Transcript/outputs
 Speech2Transcript/__pycache__
 
 #audio files
-audios
 .python-version
 .DS_Store
