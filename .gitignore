@@ -7,6 +7,7 @@ Speech2Transcript/outputs
 
 # pycache
 Speech2Transcript/__pycache__
+Speech2Transcript/summarizers/__pycache__
 
 #audio files
 .python-version

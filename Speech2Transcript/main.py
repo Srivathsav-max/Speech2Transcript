@@ -9,7 +9,7 @@ from diarization import DiarizationPipeline
 from transcription import TranscriptionPipeline
 from realtimestt import RealTimeSTT
 
-from Speech2Transcript.summarizers.medical_pipeline_integration import MedicalTranscriptSummarizer
+from summarizers.medical_pipeline_integration import MedicalTranscriptSummarizer
 
 from utils import export_to_rttm, export_to_json, merge_speakers, get_device, audio_devices
 
@@ -37,6 +37,7 @@ def main():
     parser.add_argument("--output", "-o", default="./outputs", help="Path to the output directory")
     parser.add_argument("--use_auth_token", "-hf_token", default=None, help="Hugging Face authentication token")
     parser.add_argument("--device", "-d", default=get_device(), choices=["cuda", "mps", "cpu"], help="Device to use")
+    parser.add_argument("--transcript_file", "-tf", type=str, help="Path to the Transcript file")
 
     diar_group = parser.add_argument_group("Diarization")
     diar_group.add_argument("--diarize", action="store_true", help="Perform Diarization")
@@ -70,27 +71,26 @@ def main():
     realtime_group.add_argument("--sample_rate", type=int, default=16000, help="Audio sample rate")
     realtime_group.add_argument("--chunk_size", type=int, default=2048, help="Audio chunk size for realtime processing") 
 
-    advanced_med_group = parser.add_argument_group("Advanced Medical Summarization")
-    advanced_med_group.add_argument("--advanced_medical_summary", action="store_true", 
-                                help="Enable advanced medical transcript summarization")
-    advanced_med_group.add_argument("--med_base_model", 
-                                default="microsoft/BiomedNLP-PubMedBERT-base-uncased-abstract", 
-                                help="Base language model for medical summarization")
-    advanced_med_group.add_argument("--med_ner_model", 
-                                default="emilyalsentzer/Bio_ClinicalBERT", 
-                                help="NER model for medical entity recognition")
-    advanced_med_group.add_argument("--med_qa_model", 
-                                default="dmis-lab/biobert-base-cased-v1.1-squad", 
-                                help="QA model for medical information extraction")
-    advanced_med_group.add_argument("--med_confidence", type=float, default=0.65, 
-                                help="Confidence threshold for medical entity extraction")
-    advanced_med_group.add_argument("--med_cache_dir", default=None, 
-                                help="Cache directory for medical models")
+    med_summarizer_group = parser.add_argument_group("Medical Summarization from Audio Transcripts")
+    med_summarizer_group.add_argument("--med_summarizer", action="store_true", help="Enable advanced medical transcript summarization")
+    med_summarizer_group.add_argument("--med_base_model", default="microsoft/BiomedNLP-PubMedBERT-base-uncased-abstract", help="Base language model for medical summarization")
+    med_summarizer_group.add_argument("--med_ner_model", default="emilyalsentzer/Bio_ClinicalBERT", help="NER model for medical entity recognition")
+    med_summarizer_group.add_argument("--med_qa_model", default="dmis-lab/biobert-base-cased-v1.1-squad", help="QA model for medical information extraction")
+    med_summarizer_group.add_argument("--med_confidence", type=float, default=0.65, help="Confidence threshold for medical entity extraction")
+    med_summarizer_group.add_argument("--med_cache_dir", default=None, help="Cache directory for medical models")
+
     args = parser.parse_args()
 
     signal.signal(signal.SIGINT, signal_handler)
 
-    if args.advanced_medical_summary:
+    if os.path.exists(args.transcript_file) and args.transcript_file is not None:
+        basename = os.path.splitext(os.path.basename(args.transcript_file))[0] if args.audio else "output"
+    elif args.audio:
+        basename = os.path.splitext(os.path.basename(args.audio))[0]
+    else:
+        basename = "output"
+
+    if args.med_summarizer:
         if args.transcript_file is None and not os.path.exists(os.path.join(args.output, f"{basename}_diarization.json")):
             log.error("No transcript file available for advanced medical summarization")
         else:
@@ -261,8 +261,6 @@ def main():
             return
 
         os.makedirs(args.output, exist_ok=True)
-
-        basename = os.path.splitext(os.path.basename(args.audio))[0]
 
         log.info("Initializing Diarization Pipeline")
         log.info("Using Device: %s", args.device)

@@ -2,6 +2,7 @@
 Main medical transcript processor that coordinates all extraction and generation components.
 """
 import os
+import re
 import json
 import torch
 from typing import Dict, List, Any, Optional
