@@ -1,0 +1,48 @@
+# CHRONIC CARE MANAGEMENT NOTE
+
+Date: {date}
+Patient Name: {patient_name}
+Care Manager: {care_manager_name}
+Time Spent: {time_spent} minutes (CPT Code: {billing_code})
+
+## CHRONIC CONDITIONS MANAGED
+{chronic_conditions}
+
+## CURRENT STATUS
+{status_report}
+
+## CARE COORDINATION
+{care_coordination}
+
+## VITAL SIGNS/MONITORING DATA
+{vital_signs}
+
+## MEDICATION MANAGEMENT
+{medication_management}
+
+## CARE PLAN UPDATES
+{care_plan_updates}
+
+## SOCIAL DETERMINANTS OF HEALTH
+{social_determinants}
+
+## PATIENT GOALS & SELF-MANAGEMENT
+{patient_goals}
+
+## PATIENT EDUCATION PROVIDED
+{education}
+
+## FOLLOW-UP PLAN
+{follow_up}
+
+## TIME DOCUMENTATION
+Total clinical staff time: {time_spent} minutes
+- Assessment and care planning: {assessment_time} minutes
+- Care coordination: {coordination_time} minutes
+- Patient/caregiver education: {education_time} minutes
+- Documentation: {documentation_time} minutes
+
+_____________________________________
+{provider_name}, {date}
+
+This note documents services provided under the Chronic Care Management program. The patient has given consent for CCM services.

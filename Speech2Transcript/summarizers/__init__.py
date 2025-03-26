@@ -17,18 +17,24 @@ from .base_extractor import BaseExtractor
 # Import utility functions from telehealth_template
 from .telehealth_template import generate_telehealth_note
 
+# Import CCM-specific modules
+from .ccm_template_extractor import CCMTemplateExtractor
+from .ccm_template_generator import generate_ccm_note
+
 # For backward compatibility, provide the MedicalTranscriptSummarizer class
 # This will use the new system but maintain the old interface
 from .medical_pipeline_integration import MedicalTranscriptSummarizer
 
 __all__ = [
     'MedicalTranscriptProcessor',
-    'SpeakerIdentifier', 
+    'SpeakerIdentifier',
     'VitalSignExtractor',
     'MedicationExtractor',
     'ConditionSymptomExtractor',
     'NoteGenerator',
     'BaseExtractor',
     'generate_telehealth_note',
+    'CCMTemplateExtractor',
+    'generate_ccm_note',
     'MedicalTranscriptSummarizer'
 ]

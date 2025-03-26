@@ -11,16 +11,17 @@ import pandas as pd
 from typing import Dict, List, Any, Optional, Union
 
 from .medical_transcript_processor import MedicalTranscriptProcessor
+from .ccm_template_generator import generate_ccm_note
 
 class MedicalTranscriptSummarizer:
     """
     A comprehensive medical conversation summarization pipeline that extracts structured
     information from healthcare conversations to populate telehealth progress notes.
-    
+
     This implementation uses the newer modular architecture internally while maintaining
     the same interface as the original class for backward compatibility.
     """
-    
+
     def __init__(
         self,
         base_model: str = "microsoft/BiomedNLP-PubMedBERT-base-uncased-abstract",
@@ -46,18 +47,18 @@ class MedicalTranscriptSummarizer:
         """
         self.device = device or ("cuda" if torch.cuda.is_available() else "cpu")
         self.logger = logger
-        
+
         # Store original parameters for logging purposes
         self.base_model = base_model
         self.ner_model = ner_model
         self.qa_model = qa_model
         self.compute_type = compute_type
         self.confidence_threshold = confidence_threshold
-        
+
         # Log initialization
         self._log(f"Initializing Medical Transcript Summarizer")
         self._log(f"Using device: {self.device}, compute type: {compute_type}")
-        
+
         # Initialize the new processor that handles all the work
         self.processor = MedicalTranscriptProcessor(
             ner_model=ner_model,
@@ -67,7 +68,7 @@ class MedicalTranscriptSummarizer:
             confidence_threshold=confidence_threshold,
             logger=logger
         )
-    
+
     def _log(self, message, level="info"):
         """Log messages if logger is available."""
         if self.logger:
@@ -77,14 +78,16 @@ class MedicalTranscriptSummarizer:
                 self.logger.error(message)
             elif level == "warning":
                 self.logger.warning(message)
-    
+
     def process_transcript(
         self,
         transcript_path: str = None,
         transcript_data: Dict = None,
         output_path: str = None,
         text_column: str = "transcription",
-        speaker_column: str = "speaker"
+        speaker_column: str = "speaker",
+        template_path: str = None,
+        ccm_template_path: str = None
     ) -> Dict:
         """
         Process a conversation transcript to extract medical information.
@@ -95,6 +98,8 @@ class MedicalTranscriptSummarizer:
             output_path: Optional path to save results
             text_column: Column name containing the transcription text
             speaker_column: Column name containing the speaker ID
+            template_path: Optional path to a telehealth note template
+            ccm_template_path: Optional path to a CCM note template
 
         Returns:
             Dictionary with structured clinical information
@@ -105,25 +110,31 @@ class MedicalTranscriptSummarizer:
             transcript_data=transcript_data,
             output_path=output_path,
             text_column=text_column,
-            speaker_column=speaker_column
+            speaker_column=speaker_column,
+            template_path=template_path,
+            ccm_template_path=ccm_template_path
         )
-    
+
     def process_dataframe(
         self,
         df: pd.DataFrame,
         output_path: str = None,
         text_column: str = "transcription",
-        speaker_column: str = "speaker"
+        speaker_column: str = "speaker",
+        template_path: str = None,
+        ccm_template_path: str = None
     ) -> Dict:
         """
         Process transcript data from a pandas DataFrame.
-        
+
         Args:
             df: DataFrame containing transcript data
             output_path: Optional path to save results
             text_column: Column name containing the transcription text
             speaker_column: Column name containing the speaker ID
-            
+            template_path: Optional path to a telehealth note template
+            ccm_template_path: Optional path to a CCM note template
+
         Returns:
             Dictionary with structured clinical information
         """
@@ -135,27 +146,43 @@ class MedicalTranscriptSummarizer:
                 speaker_column: row.get(speaker_column, "")
             }
             segments.append(segment)
-        
+
         transcript_data = {"segments": segments}
-        
+
         # Delegate to the main processing method
         return self.process_transcript(
             transcript_data=transcript_data,
             output_path=output_path,
             text_column=text_column,
-            speaker_column=speaker_column
+            speaker_column=speaker_column,
+            template_path=template_path,
+            ccm_template_path=ccm_template_path
         )
-    
+
     def fill_template(self, results: Dict, template_path: str) -> str:
         """
         Fill a provided template with extracted medical data.
-        
+
         Args:
             results: Extracted medical information
             template_path: Path to template file
-            
+
         Returns:
             Filled template text
         """
         # Generate a new telehealth note with the provided template
         return self.processor.note_generator.generate_telehealth_note(results, template_path)
+        
+    def generate_ccm_note(self, results: Dict, ccm_template_path: str = None) -> str:
+        """
+        Generate a CCM note from extracted medical data using advanced NLP.
+        
+        Args:
+            results: Extracted medical information
+            ccm_template_path: Optional path to CCM template file
+            
+        Returns:
+            Formatted CCM note
+        """
+        # Generate CCM note using the specialized generator
+        return generate_ccm_note(results, ccm_template_path, self.logger)

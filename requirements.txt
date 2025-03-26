@@ -72,6 +72,9 @@ shellingham==1.5.4
 six==1.17.0
 sortedcontainers==2.4.0
 soundfile==0.13.1
+spacy==3.7.2
+negspacy==1.0.3
+en-core-web-md @ https://github.com/explosion/spacy-models/releases/download/en_core_web_md-3.7.1/en_core_web_md-3.7.1-py3-none-any.whl
 speechbrain==1.0.2
 SQLAlchemy==2.0.39
 sympy==1.13.1
