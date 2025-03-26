@@ -363,7 +363,7 @@ class RealTimeSTT:
             df.to_csv(csv_path, index=False)
 
             json_path = os.path.join(self.output_dir, "realtime_transcript.json")
-            with open(json_path, 'w') as f:
+            with open(json_path, 'w', encoding="utf-8") as f:
                 json.dump({
                     "segments": self.segments,
                     "stats": {

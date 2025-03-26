@@ -84,7 +84,7 @@ def main():
     signal.signal(signal.SIGINT, signal_handler)
 
     if os.path.exists(args.transcript_file) and args.transcript_file is not None:
-        basename = os.path.splitext(os.path.basename(args.transcript_file))[0] if args.audio else "output"
+        basename = os.path.splitext(os.path.basename(args.transcript_file))[0]
     elif args.audio:
         basename = os.path.splitext(os.path.basename(args.audio))[0]
     else:

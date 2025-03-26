@@ -27,7 +27,7 @@ class MedicalTranscriptSummarizer:
         ner_model: str = "emilyalsentzer/Bio_ClinicalBERT",
         qa_model: str = "dmis-lab/biobert-base-cased-v1.1-squad",
         device: str = None,
-        compute_type: str = "float16",
+        compute_type: str = "float32",
         cache_dir: str = None,
         confidence_threshold: float = 0.65,
         logger = None

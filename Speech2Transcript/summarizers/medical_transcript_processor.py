@@ -33,7 +33,7 @@ class MedicalTranscriptProcessor(BaseExtractor):
         self,
         ner_model: str = "emilyalsentzer/Bio_ClinicalBERT",
         device: str = None,
-        compute_type: str = "float16",
+        compute_type: str = "float32",
         cache_dir: str = None,
         confidence_threshold: float = 0.65,
         logger = None
@@ -65,7 +65,8 @@ class MedicalTranscriptProcessor(BaseExtractor):
                 model=ner_model,
                 tokenizer=self.ner_tokenizer,
                 device=0 if self.device == "cuda" else -1,
-                aggregation_strategy="simple"
+                aggregation_strategy="simple",
+                truncation=True
             )
             self._log("NER model loaded successfully")
         except Exception as e:
@@ -191,20 +192,20 @@ class MedicalTranscriptProcessor(BaseExtractor):
                 os.makedirs(os.path.dirname(output_path), exist_ok=True)
                 
                 # Save main results
-                with open(output_path, 'w') as f:
+                with open(output_path, 'w', encoding="utf-8") as f:
                     json.dump(results, f, indent=2)
                 self._log(f"Saved results to {output_path}")
                 
                 # Save text outputs
                 summary_path = output_path.replace('.json', '_summary.txt')
-                with open(summary_path, 'w') as f:
+                with open(summary_path, 'w', encoding="utf-8") as f:
                     f.write(results["narrative_summary"])
                     f.write("\n\n--- SOAP NOTE ---\n\n")
                     for section, content in soap_note.items():
                         f.write(f"{section}:\n{content}\n\n")
                 
                 telehealth_path = output_path.replace('.json', '_telehealth_note.txt')
-                with open(telehealth_path, 'w') as f:
+                with open(telehealth_path, 'w', encoding="utf-8") as f:
                     f.write(telehealth_note)
                 
                 self._log(f"Saved text outputs to {os.path.dirname(output_path)}")

@@ -257,7 +257,7 @@ class TelehealthTemplateGenerator:
             
             # Set time tracking for CMS requirements
             template = self._replace_field(template, "Total clinical staff time spent on this call", "8 minutes")
-            
+            print(template)
             return template
             
         except Exception as e:
