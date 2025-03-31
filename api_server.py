@@ -9,6 +9,8 @@ from Speech2Transcript.diarization import DiarizationPipeline
 from Speech2Transcript.transcription import TranscriptionPipeline
 from Speech2Transcript.summarizers import GeminiSummarizer
 
+from Speech2Transcript.utils import get_device
+
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -72,46 +74,37 @@ app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 app.config['OUTPUT_FOLDER'] = OUTPUT_FOLDER
 
 
-# Initialize pipelines (lazy loading)
-diarization_pipeline = None
-transcription_pipeline = None
-gemini_summarizer = None
+# Initialize pipelines at startup
+logger.info("Initializing pipelines at startup...")
 
-def init_diarization_pipeline():
-    global diarization_pipeline
-    if diarization_pipeline is None:
-        logger.info("Initializing diarization pipeline")
-        diarization_pipeline = DiarizationPipeline(
-            model_name="pyannote/speaker-diarization-3.1",
-            device="cpu"  # Change to "cuda" if GPU is available
-        )
-    return diarization_pipeline
+device = get_device()
+logger.info(f"Using device: {device}")
 
-def init_transcription_pipeline():
-    global transcription_pipeline
-    if transcription_pipeline is None:
-        logger.info("Initializing transcription pipeline")
-        transcription_pipeline = TranscriptionPipeline(
-            model_name="large-v3",
-            device="cpu",  # Change to "cuda" if GPU is available
-            compute_type="float16",
-            chunk_length=30,
-            batch_size=8,
-            language="en"
-        )
-    return transcription_pipeline
+logger.info("Initializing diarization pipeline")
+diarization_pipeline = DiarizationPipeline(
+    model_name="pyannote/speaker-diarization-3.1",
+    device=device
+)
 
-def init_gemini_summarizer():
-    global gemini_summarizer
-    if gemini_summarizer is None:
-        logger.info("Initializing Gemini summarizer")
-        gemini_summarizer = GeminiSummarizer(
-            api_key=os.getenv("GOOGLE_API_KEY"),
-            model_name="gemini-2.0-flash",
-            temperature=0.1,
-            max_output_tokens=2048
-        )
-    return gemini_summarizer
+logger.info("Initializing transcription pipeline")
+transcription_pipeline = TranscriptionPipeline(
+    model_name="large-v3",
+    device=device,
+    compute_type="float16",
+    chunk_length=30,
+    batch_size=8,
+    language="en"
+)
+
+logger.info("Initializing Gemini summarizer")
+gemini_summarizer = GeminiSummarizer(
+    api_key=os.getenv("GOOGLE_API_KEY"),
+    model_name="gemini-2.0-flash",
+    temperature=0.1,
+    max_output_tokens=2048
+)
+
+logger.info("All pipelines initialized successfully")
 
 @app.route('/')
 def index():
@@ -160,9 +153,7 @@ def process_audio():
             # Run diarization if requested
             if params['diarize']:
                 logger.info("Starting diarization...")
-                pipeline = init_diarization_pipeline()
-                
-                diarization_results = pipeline.process_audio(
+                diarization_results = diarization_pipeline.process_audio(
                     filepath,
                     num_speakers=params['num_speakers']
                 )
@@ -179,8 +170,6 @@ def process_audio():
                 # Run transcription if requested
                 if params['transcribe']:
                     logger.info("Starting transcription...")
-                    
-                    transcription_pipeline = init_transcription_pipeline()
                     
                     transcription_results = transcription_pipeline.process_diarization(
                         diarization_results,
@@ -199,8 +188,6 @@ def process_audio():
                 # Run summarization if requested
                 if params['summarize'] and params['transcribe']:
                     logger.info("Starting summarization with Gemini...")
-                    
-                    summarizer = init_gemini_summarizer()
                     
                     # Create transcript data for summarizer
                     transcript_data = {
