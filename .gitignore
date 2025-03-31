@@ -1,11 +1,13 @@
 # virtual environment
 s2t
+env 
 
 # outputs
 Speech2Transcript/outputs
 
 # pycache
 Speech2Transcript/__pycache__
+Speech2Transcript/symmarizers/__pycache__
 
 #audio files
 .python-version
