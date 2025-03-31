@@ -1,0 +1,60 @@
+{
+  "segments": [
+    {
+      "speaker": "SPEAKER_01",
+      "transcription": "Hello Mrs. Johnson, this is Dr. Smith. How are you feeling today?"
+    },
+    {
+      "speaker": "SPEAKER_02",
+      "transcription": "Hi Dr. Smith. I've been having some trouble with my blood pressure lately. It was 140/90 yesterday when I checked it at home."
+    },
+    {
+      "speaker": "SPEAKER_01",
+      "transcription": "I see. That's a bit elevated. Have you been taking your medications regularly?"
+    },
+    {
+      "speaker": "SPEAKER_02",
+      "transcription": "Yes, I've been taking my lisinopril every day as prescribed. I'm also taking metformin for my diabetes."
+    },
+    {
+      "speaker": "SPEAKER_01",
+      "transcription": "Good. What about your blood sugar levels? Have you been monitoring those?"
+    },
+    {
+      "speaker": "SPEAKER_02",
+      "transcription": "Yes, my glucose was 130 this morning. That's better than last week when it was around 150."
+    },
+    {
+      "speaker": "SPEAKER_01",
+      "transcription": "That's an improvement. I'm glad to see your glucose is coming down. How about your diet and exercise?"
+    },
+    {
+      "speaker": "SPEAKER_02",
+      "transcription": "I've been trying to eat better. I'm having more vegetables and less processed food. I'm also walking for about 20 minutes every day."
+    },
+    {
+      "speaker": "SPEAKER_01",
+      "transcription": "That's excellent progress, Mrs. Johnson. I recommend increasing your walking to 30 minutes daily if possible. It would help with both your blood pressure and blood sugar control."
+    },
+    {
+      "speaker": "SPEAKER_02",
+      "transcription": "I think I can do that. I'm feeling a bit better overall, but I'm still having some headaches occasionally."
+    },
+    {
+      "speaker": "SPEAKER_01",
+      "transcription": "I'm concerned about those headaches. They could be related to your blood pressure. I suggest you monitor your blood pressure when you have a headache to see if there's a correlation."
+    },
+    {
+      "speaker": "SPEAKER_02",
+      "transcription": "That makes sense. I'll do that."
+    },
+    {
+      "speaker": "SPEAKER_01",
+      "transcription": "Great. Let's schedule a follow-up appointment in 2 weeks to check your progress. In the meantime, continue with your medications, increase your walking to 30 minutes daily, and keep monitoring your blood pressure and glucose."
+    },
+    {
+      "speaker": "SPEAKER_02",
+      "transcription": "Thank you, Dr. Smith. I'll see you in 2 weeks."
+    }
+  ]
+}

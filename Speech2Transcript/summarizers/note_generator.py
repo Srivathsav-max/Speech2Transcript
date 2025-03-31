@@ -71,17 +71,41 @@ class NoteGenerator(BaseExtractor):
         """Build the Subjective section of the SOAP note."""
         subjective_parts = []
         
-        # Add symptom information
+        # Get transcript analysis for more dynamic content
+        transcript_analysis = results.get("transcript_analysis", {})
+        
+        # Add a dynamic opening based on conversation type
+        conversation_type = transcript_analysis.get("conversation_type", "routine")
+        if conversation_type == "urgent":
+            subjective_parts.append("Patient presents with urgent health concerns.")
+        elif conversation_type == "follow-up":
+            subjective_parts.append("Patient presents for follow-up appointment.")
+        elif conversation_type == "new complaint":
+            subjective_parts.append("Patient presents with new health concerns.")
+        else:
+            subjective_parts.append("Patient presents for routine check-in.")
+        
+        # Add patient concerns from direct analysis
+        if transcript_analysis.get("patient_concerns"):
+            concerns = transcript_analysis["patient_concerns"]
+            subjective_parts.append(f"Chief concerns: {'; '.join(concerns)}.")
+        
+        # Add symptom information from extracted data
         health_status = results.get("health_status", {})
         if health_status.get("has_symptoms"):
-            subjective_parts.append(f"Patient reports: {health_status.get('symptom_text', '')}")
-        else:
+            if not transcript_analysis.get("patient_concerns"):  # Only add if we didn't already mention concerns
+                subjective_parts.append(f"Patient reports: {health_status.get('symptom_text', '')}")
+        elif not transcript_analysis.get("patient_concerns"):  # Only add if we didn't already mention concerns
             subjective_parts.append("Patient denies any unusual symptoms or health concerns.")
         
         # Add medication adherence
         medications = results.get("medications", {})
         if medications.get("adherence"):
             subjective_parts.append(medications["adherence"])
+        
+        # Add side effects information
+        if medications.get("side_effects") and medications["side_effects"] != "No side effects reported":
+            subjective_parts.append(f"Medication side effects: {medications['side_effects']}")
         
         # Add lifestyle information
         lifestyle = results.get("lifestyle", {})
@@ -119,6 +143,19 @@ class NoteGenerator(BaseExtractor):
         alcohol = lifestyle.get("alcohol", {})
         if alcohol and isinstance(alcohol, dict) and alcohol.get("status"):
             subjective_parts.append(f"Alcohol: {alcohol['status']}")
+        
+        # Add key topics from conversation if available
+        if transcript_analysis.get("key_topics"):
+            topics = transcript_analysis["key_topics"]
+            if topics:
+                subjective_parts.append(f"Discussion topics included: {', '.join(topics)}.")
+        
+        # Add sentiment information
+        sentiment = transcript_analysis.get("sentiment", "neutral")
+        if sentiment == "positive":
+            subjective_parts.append("Patient expresses positive outlook about their health status.")
+        elif sentiment == "negative":
+            subjective_parts.append("Patient expresses concerns about their health status.")
         
         return "\n".join(subjective_parts)
     
@@ -245,6 +282,9 @@ class NoteGenerator(BaseExtractor):
         """Build the Plan section of the SOAP note."""
         plan_parts = []
         
+        # Get transcript analysis for more dynamic content
+        transcript_analysis = results.get("transcript_analysis", {})
+        
         # Add follow-up plan
         follow_up = results.get("plan", {}).get("follow_up", {})
         if follow_up:
@@ -264,14 +304,22 @@ class NoteGenerator(BaseExtractor):
         # Recommendations
         plan_parts.append("\nRecommendations:")
         
+        # Add provider recommendations from direct analysis
+        if transcript_analysis.get("provider_recommendations"):
+            for recommendation in transcript_analysis["provider_recommendations"]:
+                plan_parts.append(f"- {recommendation}")
+        
         # Medication recommendations
         med_list = results.get("medications", {}).get("medications", [])
         if med_list:
-            plan_parts.append("- Continue current medications")
-            
-            # Check for any medications that need adjustment
-            if any(not med.get("is_active", True) for med in med_list):
-                plan_parts.append("- Note medication changes in the record")
+            # Only add if not already covered in provider recommendations
+            provider_recs = " ".join(transcript_analysis.get("provider_recommendations", [])).lower()
+            if "medication" not in provider_recs and "medicine" not in provider_recs:
+                plan_parts.append("- Continue current medications")
+                
+                # Check for any medications that need adjustment
+                if any(not med.get("is_active", True) for med in med_list):
+                    plan_parts.append("- Note medication changes in the record")
         
         # Monitoring recommendations
         monitor_parts = []
@@ -283,21 +331,34 @@ class NoteGenerator(BaseExtractor):
                 monitor_parts.append("blood pressure")
         
         if monitor_parts:
-            plan_parts.append(f"- Continue monitoring {' and '.join(monitor_parts)}")
+            # Only add if not already covered in provider recommendations
+            provider_recs = " ".join(transcript_analysis.get("provider_recommendations", [])).lower()
+            if not any(part.lower() in provider_recs for part in monitor_parts):
+                plan_parts.append(f"- Continue monitoring {' and '.join(monitor_parts)}")
         
         # Lifestyle recommendations
         lifestyle = results.get("lifestyle", {})
         lifestyle_recs = []
         
-        if lifestyle.get("diet") and isinstance(lifestyle["diet"], dict) and lifestyle["diet"].get("context"):
+        # Check if lifestyle topics are mentioned in the conversation
+        key_topics = transcript_analysis.get("key_topics", [])
+        
+        if "diet" in key_topics or (lifestyle.get("diet") and isinstance(lifestyle["diet"], dict) and lifestyle["diet"].get("context")):
             lifestyle_recs.append("dietary habits")
-        if lifestyle.get("exercise") and isinstance(lifestyle["exercise"], dict) and lifestyle["exercise"].get("context"):
+            
+        if "exercise" in key_topics or (lifestyle.get("exercise") and isinstance(lifestyle["exercise"], dict) and lifestyle["exercise"].get("context")):
             lifestyle_recs.append("physical activity")
             
         if lifestyle_recs:
-            plan_parts.append(f"- Continue healthy {' and '.join(lifestyle_recs)}")
+            # Only add if not already covered in provider recommendations
+            provider_recs = " ".join(transcript_analysis.get("provider_recommendations", [])).lower()
+            if not any(rec.lower() in provider_recs for rec in lifestyle_recs):
+                plan_parts.append(f"- Continue healthy {' and '.join(lifestyle_recs)}")
         else:
-            plan_parts.append("- Maintain healthy lifestyle habits")
+            # Only add if not already covered in provider recommendations
+            provider_recs = " ".join(transcript_analysis.get("provider_recommendations", [])).lower()
+            if "lifestyle" not in provider_recs and "habits" not in provider_recs:
+                plan_parts.append("- Maintain healthy lifestyle habits")
         
         # Preventive care recommendations
         preventive = results.get("preventive_care", {})
@@ -309,7 +370,19 @@ class NoteGenerator(BaseExtractor):
                 preventive_recs.append(f"schedule {check_name}")
         
         if preventive_recs:
-            plan_parts.append("- " + ", ".join(preventive_recs))
+            # Only add if not already covered in provider recommendations
+            provider_recs = " ".join(transcript_analysis.get("provider_recommendations", [])).lower()
+            if not any(rec.lower() in provider_recs for rec in preventive_recs):
+                plan_parts.append("- " + ", ".join(preventive_recs))
+        
+        # Add a conclusion based on conversation sentiment
+        sentiment = transcript_analysis.get("sentiment", "neutral")
+        if sentiment == "positive":
+            plan_parts.append("\nOverall, patient is progressing well with current treatment plan.")
+        elif sentiment == "negative":
+            plan_parts.append("\nClose monitoring recommended due to patient's ongoing concerns.")
+        else:
+            plan_parts.append("\nContinue with current treatment approach and reassess at next visit.")
         
         return "\n".join(plan_parts)
     

@@ -5,10 +5,16 @@ This module provides backward compatibility with the original MedicalTranscriptS
 while using the new modular architecture for improved accuracy and maintainability.
 """
 import os
-import torch
 import json
 import pandas as pd
 from typing import Dict, List, Any, Optional, Union
+
+# Make torch optional
+try:
+    import torch
+    TORCH_AVAILABLE = True
+except ImportError:
+    TORCH_AVAILABLE = False
 
 from .medical_transcript_processor import MedicalTranscriptProcessor
 
@@ -44,7 +50,10 @@ class MedicalTranscriptSummarizer:
             confidence_threshold: Minimum confidence for entity extraction
             logger: Optional logger for messages
         """
-        self.device = device or ("cuda" if torch.cuda.is_available() else "cpu")
+        if TORCH_AVAILABLE:
+            self.device = device or ("cuda" if torch.cuda.is_available() else "cpu")
+        else:
+            self.device = "cpu"
         self.logger = logger
         
         # Store original parameters for logging purposes

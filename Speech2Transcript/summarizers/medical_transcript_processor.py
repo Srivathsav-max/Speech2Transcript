@@ -4,13 +4,19 @@ Main medical transcript processor that coordinates all extraction and generation
 import os
 import re
 import json
-import torch
 from typing import Dict, List, Any, Optional
-from transformers import (
-    AutoTokenizer,
-    AutoModelForTokenClassification,
-    pipeline
-)
+
+# Make torch and transformers optional
+try:
+    import torch
+    from transformers import (
+        AutoTokenizer,
+        AutoModelForTokenClassification,
+        pipeline
+    )
+    TORCH_AVAILABLE = True
+except ImportError:
+    TORCH_AVAILABLE = False
 
 from .speaker_identifier import SpeakerIdentifier
 from .vital_sign_extractor import VitalSignExtractor
@@ -51,26 +57,34 @@ class MedicalTranscriptProcessor(BaseExtractor):
         """
         super().__init__(logger)
         self.confidence_threshold = confidence_threshold
-        self.device = device or ("cuda" if torch.cuda.is_available() else "cpu")
+        if TORCH_AVAILABLE:
+            self.device = device or ("cuda" if torch.cuda.is_available() else "cpu")
+        else:
+            self.device = "cpu"
         self.compute_type = compute_type
         
-        # Initialize NER model if available
+        # Initialize NER model if available and torch is installed
         self.ner_model = None
         self.ner_tokenizer = None
-        try:
-            self._log("Loading NER model...")
-            self.ner_tokenizer = AutoTokenizer.from_pretrained(ner_model, cache_dir=cache_dir)
-            self.ner_model = pipeline(
-                "ner",
-                model=ner_model,
-                tokenizer=self.ner_tokenizer,
-                device=0 if self.device == "cuda" else -1,
-                aggregation_strategy="simple",
-                truncation=True
-            )
-            self._log("NER model loaded successfully")
-        except Exception as e:
-            self._log(f"Error loading NER model: {e}. Will proceed without NER.", level="warning")
+        
+        if ner_model is not None:
+            if not TORCH_AVAILABLE:
+                self._log("Torch or transformers not available. Skipping NER model initialization.", level="warning")
+            else:
+                try:
+                    self._log("Loading NER model...")
+                    self.ner_tokenizer = AutoTokenizer.from_pretrained(ner_model, cache_dir=cache_dir)
+                    self.ner_model = pipeline(
+                        "ner",
+                        model=ner_model,
+                        tokenizer=self.ner_tokenizer,
+                        device=0 if self.device == "cuda" else -1,
+                        aggregation_strategy="simple",
+                        truncation=True
+                    )
+                    self._log("NER model loaded successfully")
+                except Exception as e:
+                    self._log(f"Error loading NER model: {e}. Will proceed without NER.", level="warning")
         
         # Initialize specialized extractors
         self.speaker_identifier = SpeakerIdentifier(logger)
@@ -128,30 +142,33 @@ class MedicalTranscriptProcessor(BaseExtractor):
         # Step 1: Identify speakers
         speaker_info = self.speaker_identifier.extract(segments, text_column, speaker_column)
         
+        # Step 2: Perform direct transcript content analysis for dynamic summarization
+        transcript_analysis = self._analyze_transcript_content(segments, text_column, speaker_column)
+        
         # Extract combined text for analysis
         all_text = self._combine_text(segments, text_column)
         
-        # Step 2: Perform NER if model is available
+        # Step 3: Perform NER if model is available
         entities = []
         if self.ner_model:
             entities = self._extract_entities(all_text)
         
-        # Step 3: Extract vital signs
+        # Step 4: Extract vital signs
         vital_signs = self.vital_sign_extractor.extract(all_text)
         
-        # Step 4: Extract medications
+        # Step 5: Extract medications
         medication_info = self.medication_extractor.extract(all_text, entities)
         
-        # Step 5: Extract conditions and symptoms
+        # Step 6: Extract conditions and symptoms
         condition_symptom_info = self.condition_symptom_extractor.extract(all_text, entities)
         
-        # Step 6: Extract lifestyle information
+        # Step 7: Extract lifestyle information
         lifestyle_info = self._extract_lifestyle_info(all_text)
         
-        # Step 7: Extract preventive care information
+        # Step 8: Extract preventive care information
         preventive_care = self._extract_preventive_care(all_text)
         
-        # Step 8: Extract follow-up information
+        # Step 9: Extract follow-up information
         follow_up = self._extract_follow_up(all_text)
         
         # Combine all extracted information
@@ -171,6 +188,7 @@ class MedicalTranscriptProcessor(BaseExtractor):
             "plan": {
                 "follow_up": follow_up
             },
+            "transcript_analysis": transcript_analysis,  # Add the direct transcript analysis
             "raw_entities": [{"word": e["word"], "type": e.get("entity"), "score": e.get("score")}
                            for e in entities] if entities else []
         }
@@ -183,7 +201,7 @@ class MedicalTranscriptProcessor(BaseExtractor):
         telehealth_note = self.note_generator.generate_telehealth_note(results, template_path)
         results["telehealth_note"] = telehealth_note
         
-        # Generate narrative summary
+        # Generate narrative summary using the enhanced method
         results["narrative_summary"] = self._generate_summary(results)
         
         # Save results if output path provided
@@ -207,6 +225,19 @@ class MedicalTranscriptProcessor(BaseExtractor):
                 telehealth_path = output_path.replace('.json', '_telehealth_note.txt')
                 with open(telehealth_path, 'w', encoding="utf-8") as f:
                     f.write(telehealth_note)
+                
+                # Save a simple version with just the key information
+                simple_path = output_path.replace('.json', '_simple.json')
+                simple_results = {
+                    "summary": results["narrative_summary"],
+                    "key_topics": transcript_analysis.get("key_topics", []),
+                    "patient_concerns": transcript_analysis.get("patient_concerns", []),
+                    "provider_recommendations": transcript_analysis.get("provider_recommendations", []),
+                    "conversation_type": transcript_analysis.get("conversation_type", "routine"),
+                    "sentiment": transcript_analysis.get("sentiment", "neutral")
+                }
+                with open(simple_path, 'w', encoding="utf-8") as f:
+                    json.dump(simple_results, f, indent=2)
                 
                 self._log(f"Saved text outputs to {os.path.dirname(output_path)}")
                 
@@ -346,9 +377,111 @@ class MedicalTranscriptProcessor(BaseExtractor):
         
         return follow_up
     
+    def _analyze_transcript_content(self, segments, text_column, speaker_column):
+        """
+        Analyze the transcript content directly to extract key information.
+        
+        Args:
+            segments: List of transcript segments
+            text_column: Column name containing the transcription text
+            speaker_column: Column name containing the speaker ID
+            
+        Returns:
+            Dictionary with extracted key information
+        """
+        self._log("Analyzing transcript content for dynamic summarization")
+        
+        # Initialize analysis results
+        analysis = {
+            "key_topics": [],
+            "conversation_flow": [],
+            "patient_concerns": [],
+            "provider_recommendations": [],
+            "sentiment": "neutral",
+            "conversation_type": "routine"
+        }
+        
+        # Identify speakers
+        speakers = {}
+        for segment in segments:
+            speaker = segment.get(speaker_column, "")
+            if speaker and speaker not in speakers:
+                speakers[speaker] = []
+        
+        # Group text by speaker and analyze content
+        for segment in segments:
+            speaker = segment.get(speaker_column, "")
+            text = segment.get(text_column, "")
+            
+            if speaker and text:
+                speakers[speaker].append(text)
+                
+                # Detect patient concerns
+                concern_patterns = [
+                    r"(?:I've been|I am|I'm) (?:feeling|having|experiencing) (.*?)(?:\.|\?|$)",
+                    r"(?:I've|I) noticed (.*?)(?:\.|\?|$)",
+                    r"(?:I'm|I am) worried about (.*?)(?:\.|\?|$)",
+                    r"(?:problem|issue|concern) with (.*?)(?:\.|\?|$)"
+                ]
+                
+                for pattern in concern_patterns:
+                    matches = re.findall(pattern, text, re.IGNORECASE)
+                    for match in matches:
+                        if match and match.strip() not in analysis["patient_concerns"]:
+                            analysis["patient_concerns"].append(match.strip())
+                
+                # Detect provider recommendations
+                recommendation_patterns = [
+                    r"(?:I recommend|I suggest|you should|you need to) (.*?)(?:\.|\?|$)",
+                    r"(?:try|consider) (.*?)(?:\.|\?|$)",
+                    r"(?:important|essential) (?:to|that you) (.*?)(?:\.|\?|$)"
+                ]
+                
+                for pattern in recommendation_patterns:
+                    matches = re.findall(pattern, text, re.IGNORECASE)
+                    for match in matches:
+                        if match and match.strip() not in analysis["provider_recommendations"]:
+                            analysis["provider_recommendations"].append(match.strip())
+                
+                # Detect conversation type
+                if re.search(r"emergency|urgent|immediate|severe pain", text, re.IGNORECASE):
+                    analysis["conversation_type"] = "urgent"
+                elif re.search(r"follow-up|following up|check-in", text, re.IGNORECASE):
+                    analysis["conversation_type"] = "follow-up"
+                elif re.search(r"new symptoms|new issues|new problems", text, re.IGNORECASE):
+                    analysis["conversation_type"] = "new complaint"
+                
+                # Detect sentiment
+                positive_terms = ["better", "improved", "good", "great", "excellent", "happy", "pleased"]
+                negative_terms = ["worse", "difficult", "bad", "terrible", "unhappy", "concerned", "worried"]
+                
+                positive_count = sum(1 for term in positive_terms if re.search(r'\b' + term + r'\b', text, re.IGNORECASE))
+                negative_count = sum(1 for term in negative_terms if re.search(r'\b' + term + r'\b', text, re.IGNORECASE))
+                
+                if positive_count > negative_count:
+                    analysis["sentiment"] = "positive"
+                elif negative_count > positive_count:
+                    analysis["sentiment"] = "negative"
+        
+        # Extract key topics from the entire conversation
+        all_text = " ".join([segment.get(text_column, "") for segment in segments])
+        
+        # Common medical topics to detect
+        medical_topics = [
+            "medication", "diet", "exercise", "sleep", "pain", "blood pressure", 
+            "diabetes", "heart", "breathing", "mental health", "anxiety", "depression",
+            "surgery", "procedure", "test results", "lab work", "imaging", "referral"
+        ]
+        
+        for topic in medical_topics:
+            if re.search(r'\b' + topic + r'\b', all_text, re.IGNORECASE):
+                analysis["key_topics"].append(topic)
+        
+        return analysis
+    
     def _generate_summary(self, results: Dict[str, Any]) -> str:
         """
-        Generate a narrative summary of the medical conversation.
+        Generate a dynamic narrative summary of the medical conversation.
         
         Args:
             results: Dictionary with extracted medical information
@@ -358,16 +491,44 @@ class MedicalTranscriptProcessor(BaseExtractor):
         """
         summary_parts = []
         
+        # Get transcript data if available
+        transcript_analysis = results.get("transcript_analysis", {})
+        
+        # Determine conversation type and format
+        conversation_type = transcript_analysis.get("conversation_type", "routine")
+        sentiment = transcript_analysis.get("sentiment", "neutral")
+        
         # Patient info
         patient_name = results["patient_info"]["patient_name"]
         care_manager_name = results["patient_info"]["care_manager_name"]
-        summary_parts.append(f"{patient_name} had a routine check-in call with {care_manager_name}.")
         
-        # Health status
+        # Create a more dynamic opening based on conversation type
+        if conversation_type == "urgent":
+            summary_parts.append(f"{patient_name} had an urgent consultation with {care_manager_name}.")
+        elif conversation_type == "follow-up":
+            summary_parts.append(f"{patient_name} had a follow-up appointment with {care_manager_name}.")
+        elif conversation_type == "new complaint":
+            summary_parts.append(f"{patient_name} consulted with {care_manager_name} regarding new health concerns.")
+        else:
+            summary_parts.append(f"{patient_name} had a routine check-in with {care_manager_name}.")
+        
+        # Add key topics if available
+        if transcript_analysis.get("key_topics"):
+            topics = transcript_analysis["key_topics"][:3]  # Limit to top 3 topics
+            if topics:
+                summary_parts.append(f"The conversation focused on {', '.join(topics)}.")
+        
+        # Patient concerns from direct analysis
+        if transcript_analysis.get("patient_concerns"):
+            concerns = transcript_analysis["patient_concerns"][:3]  # Limit to top 3 concerns
+            if concerns:
+                summary_parts.append(f"Patient expressed concerns about: {'; '.join(concerns)}.")
+        
+        # Health status from extracted data
         health_status = results["health_status"]
         if health_status["has_symptoms"]:
             summary_parts.append(f"Patient reported symptoms: {health_status['symptom_text']}.")
-        else:
+        elif not transcript_analysis.get("patient_concerns"):  # Only add if we didn't already mention concerns
             summary_parts.append("Patient reported no unusual symptoms.")
         
         # Conditions
@@ -416,6 +577,12 @@ class MedicalTranscriptProcessor(BaseExtractor):
             if side_effects and side_effects != "No side effects reported":
                 summary_parts.append(f"Side effects: {side_effects}.")
         
+        # Provider recommendations from direct analysis
+        if transcript_analysis.get("provider_recommendations"):
+            recommendations = transcript_analysis["provider_recommendations"][:3]  # Limit to top 3
+            if recommendations:
+                summary_parts.append(f"Provider recommended: {'; '.join(recommendations)}.")
+        
         # Follow-up plan
         follow_up = results["plan"]["follow_up"]
         if follow_up:
@@ -429,5 +596,11 @@ class MedicalTranscriptProcessor(BaseExtractor):
                     summary_parts.append(f"Follow-up plan: {follow_up['complete_text']}.")
             else:
                 summary_parts.append(f"Follow-up plan: {follow_up}.")
+        
+        # Add sentiment-based conclusion
+        if sentiment == "positive":
+            summary_parts.append("Overall, the patient appears to be doing well.")
+        elif sentiment == "negative":
+            summary_parts.append("The patient appears to be experiencing difficulties with their health status.")
         
         return " ".join(summary_parts)
