@@ -5,8 +5,6 @@ import pyaudio
 import json
 from typing import List, Dict
 
-from summarize import SummarizationPipeline
-from typing import Optional, Union, List, Dict, Any
 
 
 def get_device():
