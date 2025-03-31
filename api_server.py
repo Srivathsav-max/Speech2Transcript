@@ -21,12 +21,46 @@ logger = logging.getLogger(__name__)
 
 # Initialize Flask app
 app = Flask(__name__, static_folder='outputs')
-CORS(app)  # Enable CORS for all routes
+CORS(app, resources={
+    r"/*": {  # Allow CORS for all routes
+        "origins": "http://localhost:3000",  # Frontend URL
+        "methods": ["GET", "POST", "OPTIONS"],
+        "allow_headers": ["Content-Type", "Authorization", "Accept"],
+        "expose_headers": ["Content-Type", "Content-Disposition"],
+        "supports_credentials": True,
+        "send_wildcard": False
+    }
+})
+
+# Enable CORS preflight for all routes
+@app.before_request
+def handle_preflight():
+    if request.method == "OPTIONS":
+        response = app.make_default_options_response()
+        response.headers["Access-Control-Allow-Origin"] = "http://localhost:3000"
+        response.headers["Access-Control-Allow-Credentials"] = "true"
+        return response
+
+# Configure error handling
+@app.errorhandler(400)
+def bad_request(e):
+    return jsonify({'error': str(e)}), 400
+
+@app.errorhandler(500)
+def internal_error(e):
+    return jsonify({'error': str(e)}), 500
 
 # Configure upload folder
 UPLOAD_FOLDER = 'uploads'
 OUTPUT_FOLDER = 'outputs'
-ALLOWED_EXTENSIONS = {'wav', 'mp3', 'ogg', 'flac', 'aac', 'm4a'}
+ALLOWED_EXTENSIONS = {'wav', 'mp3', 'ogg', 'flac', 'aac', 'm4a', 'audio', 'audio/wav', 'audio/mp3', 'audio/ogg', 'audio/flac', 'audio/aac', 'audio/m4a'}
+
+# Helper function to check allowed file extensions
+def allowed_file(filename):
+    if '.' not in filename:
+        extension = filename.split(';')[0].split('/')[1] if ';' in filename else filename.split('/')[-1]
+        return extension.lower() in ALLOWED_EXTENSIONS
+    return filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
 if not os.path.exists(UPLOAD_FOLDER):
     os.makedirs(UPLOAD_FOLDER)
@@ -36,9 +70,6 @@ if not os.path.exists(OUTPUT_FOLDER):
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 app.config['OUTPUT_FOLDER'] = OUTPUT_FOLDER
 
-# Helper function to check allowed file extensions
-def allowed_file(filename):
-    return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
 # Initialize pipelines (lazy loading)
 diarization_pipeline = None
@@ -86,11 +117,17 @@ def index():
 
 @app.route('/api/process', methods=['POST'])
 def process_audio():
+    logger.info("Received process request")
+    logger.info(f"Files: {request.files.keys()}")
+    logger.info(f"Form data: {request.form}")
+    
     # Check if the post request has the file part
     if 'file' not in request.files:
-        return jsonify({'error': 'No file part'}), 400
+        logger.error("No file part in request")
+        return jsonify({'error': 'No file part in request'}), 400
     
     file = request.files['file']
+    logger.info(f"Received file: {file.filename}")
     
     # If user does not select file, browser also
     # submit an empty part without filename
@@ -224,5 +261,5 @@ def health_check():
     return jsonify({"status": "healthy"})
 
 if __name__ == '__main__':
-    port = int(os.environ.get('PORT', 5000))
+    port = int(os.environ.get('PORT', 5512))
     app.run(host='0.0.0.0', port=port, debug=True)

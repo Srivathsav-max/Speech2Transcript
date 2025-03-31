@@ -4,7 +4,7 @@ import pandas as pd
 from pyannote.audio import Pipeline
 from typing import Optional, Union
 
-from utils import segments_to_df
+from .utils import segments_to_df
 
 class DiarizationPipeline:
     """
@@ -56,4 +56,3 @@ class DiarizationPipeline:
         diarization_df = segments_to_df(segments, labels, speakers)
         
         return diarization_df
-              
