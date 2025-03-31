@@ -1,14 +1,89 @@
-# virtual environment
-s2t
-env
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
 
-# outputs
-Speech2Transcript/outputs
+# C extensions
+*.so
 
-# pycache
-Speech2Transcript/__pycache__
-Speech2Transcript/summarizers/__pycache__
+# Distribution / packaging
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
 
-#audio files
-.python-version
+# Unit test / coverage reports
+htmlcov/
+.tox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+.hypothesis/
+.pytest_cache/
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# Environments
+.env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Speech2Transcript specific
+outputs/
+test_outputs/
+temp/
+audio_cache/
+*.wav
+
+# HuggingFace cache
+.cache/
+.huggingface/
+
+# Model files
+*.pt
+*.pth
+*.bin
+*.model
+*.onnx
+
+# Logs
+logs/
+*.log
+
+# MacOS
 .DS_Store
+
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# Node modules (for frontend)
+node_modules/
+.next/

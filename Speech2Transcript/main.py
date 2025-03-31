@@ -1,15 +1,13 @@
 import os
-import torch
 import sys
-import traceback
 import signal
 import logging as log
 import argparse
-from diarization import DiarizationPipeline 
+from diarization import DiarizationPipeline
 from transcription import TranscriptionPipeline
 from realtimestt import RealTimeSTT
 
-from summarizers.medical_pipeline_integration import MedicalTranscriptSummarizer
+from summarizers import AdvancedMedicalSummarizer, GeminiSummarizer
 
 from utils import export_to_rttm, export_to_json, merge_speakers, get_device, audio_devices
 
@@ -29,7 +27,7 @@ def signal_handler(sig, frame):
 def main():
     parser = argparse.ArgumentParser(
         description = "Speech to Text Transcription",
-        formatter_class= argparse.ArgumentDefaultsHelpFormatter 
+        formatter_class= argparse.ArgumentDefaultsHelpFormatter
     )
 
 
@@ -66,18 +64,19 @@ def main():
     realtime_group.add_argument("--device_index", "-di", type=int, default=None, help="Input device index for real-time audio")
     realtime_group.add_argument("--buffer_duration", type=float, default=15.0, help="Audio buffer duration in seconds")
     realtime_group.add_argument("--processing_interval", type=float, default=2.0, help="How often to process the buffer in seconds")
-    realtime_group.add_argument("--vad_threshold", type=float, default=0.005, help="Voice activity detection threshold")  
+    realtime_group.add_argument("--vad_threshold", type=float, default=0.005, help="Voice activity detection threshold")
     realtime_group.add_argument("--use_adaptive_vad", action="store_true", help="Use adaptive VAD threshold")
     realtime_group.add_argument("--sample_rate", type=int, default=16000, help="Audio sample rate")
-    realtime_group.add_argument("--chunk_size", type=int, default=2048, help="Audio chunk size for realtime processing") 
+    realtime_group.add_argument("--chunk_size", type=int, default=2048, help="Audio chunk size for realtime processing")
 
-    med_summarizer_group = parser.add_argument_group("Medical Summarization from Audio Transcripts")
-    med_summarizer_group.add_argument("--med_summarizer", action="store_true", help="Enable advanced medical transcript summarization")
-    med_summarizer_group.add_argument("--med_base_model", default="microsoft/BiomedNLP-PubMedBERT-base-uncased-abstract", help="Base language model for medical summarization")
-    med_summarizer_group.add_argument("--med_ner_model", default="emilyalsentzer/Bio_ClinicalBERT", help="NER model for medical entity recognition")
-    med_summarizer_group.add_argument("--med_qa_model", default="dmis-lab/biobert-base-cased-v1.1-squad", help="QA model for medical information extraction")
-    med_summarizer_group.add_argument("--med_confidence", type=float, default=0.65, help="Confidence threshold for medical entity extraction")
-    med_summarizer_group.add_argument("--med_cache_dir", default=None, help="Cache directory for medical models")
+    # Summarizer options
+    summarizer_group = parser.add_argument_group("Transcript Summarization")
+    summarizer_group.add_argument("--summarize", action="store_true", help="Generate a summary of the transcript")
+    summarizer_group.add_argument("--detailed", action="store_true", help="Generate a more detailed summary with comprehensive analysis")
+    summarizer_group.add_argument("--summary-output", default="summary", help="Output filename for the summary (without extension)")
+    summarizer_group.add_argument("--use-gemini", action="store_true", help="Use Google Gemini API for generating summaries")
+    summarizer_group.add_argument("--gemini-api-key", type=str, help="API key for Google Gemini (defaults to GOOGLE_API_KEY environment variable)")
+    summarizer_group.add_argument("--gemini-model", default="gemini-pro", help="Gemini model to use for summarization")
 
     args = parser.parse_args()
 
@@ -90,54 +89,75 @@ def main():
     else:
         basename = "output"
 
-    if args.med_summarizer:
+    if args.summarize or args.detailed or args.use_gemini:
         if args.transcript_file is None and not os.path.exists(os.path.join(args.output, f"{basename}_diarization.json")):
-            log.error("No transcript file available for advanced medical summarization")
+            log.error("No transcript file available for summarization")
         else:
             transcript_file = args.transcript_file or os.path.join(args.output, f"{basename}_diarization.json")
-            
+
+            # Determine output filename
+            summary_basename = args.summary_output if args.summary_output != "summary" else basename
+
             try:
-                log.info("Initializing Advanced Medical Transcript Summarizer")
-                medical_summarizer = MedicalTranscriptSummarizer(
-                    base_model=args.med_base_model,
-                    ner_model=args.med_ner_model,
-                    qa_model=args.med_qa_model,
-                    device=args.device,
-                    compute_type=args.compute_type,
-                    cache_dir=args.med_cache_dir,
-                    confidence_threshold=args.med_confidence,
-                    logger=log
-                )
-                
-                output_path = os.path.join(args.output, f"{basename}_medical_summary.json")
-                
-                log.info(f"Processing medical transcript: {transcript_file}")
-                result = medical_summarizer.process_transcript(
-                    transcript_path=transcript_file,
-                    output_path=output_path,
-                    text_column="transcription",
-                    speaker_column="speaker"
-                )
-                
-                log.info("=" * 60)
-                log.info("Medical Summary:")
-                log.info("=" * 60)
-                log.info(result["narrative_summary"])
-                
-                log.info("\n" + "=" * 60)
-                log.info("SOAP Note:")
-                log.info("=" * 60)
-                for section, content in result["soap_note"].items():
-                    log.info(f"{section}:")
-                    log.info(content)
-                    log.info("-" * 40)
-                
-                log.info(f"Full medical summary saved to: {output_path}")
-                log.info(f"Simple summary saved to: {output_path.replace('.json', '_simple.json')}")
-                log.info(f"Text summary saved to: {output_path.replace('.json', '_summary.txt')}")
-                
+                # Choose appropriate summarizer based on flags
+                if args.use_gemini:
+                    log.info("Initializing Gemini-powered summarizer")
+                    summarizer = GeminiSummarizer(
+                        api_key=args.gemini_api_key,
+                        model_name=args.gemini_model,
+                        logger=log
+                    )
+                    output_path = os.path.join(args.output, f"{summary_basename}_gemini_summary.json")
+                    
+                    log.info(f"Processing transcript with Gemini: {transcript_file}")
+                    result = summarizer.process_transcript(
+                        transcript_path=transcript_file,
+                        output_path=output_path,
+                        text_column="transcription",
+                        speaker_column="speaker"
+                    )
+                    
+                    log.info("=" * 60)
+                    log.info("Gemini-Generated Summary:")
+                    log.info("=" * 60)
+                    log.info(result["summary"])
+                    log.info("=" * 60)
+                    
+                    log.info(f"Summary saved to: {output_path}")
+                    log.info(f"Text summary saved to: {output_path.replace('.json', '_summary.txt')}")
+                    
+                else:
+                    # Use the AdvancedMedicalSummarizer for traditional extraction-based summaries
+                    log.info("Initializing transcript summarizer")
+                    summarizer = AdvancedMedicalSummarizer(logger=log)
+                    output_path = os.path.join(args.output, f"{summary_basename}_enhanced_summary.json")
+
+                    log.info(f"Processing transcript with comprehensive analysis: {transcript_file}")
+                    result = summarizer.process_transcript(
+                        transcript_path=transcript_file,
+                        output_path=output_path,
+                        text_column="transcription",
+                        speaker_column="speaker"
+                    )
+
+                    log.info("=" * 60)
+                    log.info("Enhanced Transcript Summary:")
+                    log.info("=" * 60)
+                    log.info(result["detailed_summary"])
+                    log.info("=" * 60)
+
+                    # Print health assessment if available
+                    if "health_assessment" in result["extracted_data"]:
+                        assessment = result["extracted_data"]["health_assessment"]
+                        log.info("Health Status: %s (confidence: %.2f)",
+                                assessment.get("status", "Unknown").upper(),
+                                assessment.get("confidence", 0.0))
+
+                    log.info(f"Comprehensive analysis saved to: {output_path}")
+                    log.info(f"Text summary saved to: {output_path.replace('.json', '_summary.txt')}")
+
             except Exception as e:
-                log.error(f"Error in advanced medical summarization: {e}")
+                log.error(f"Error in transcript summarization: {e}")
                 import traceback
                 traceback.print_exc()
 
@@ -147,7 +167,7 @@ def main():
         for device in devices:
             log.info("Device Index: %s, Name: %s, Max Channels: %s", device["index"], device["name"], device["channels"])
         return
-    
+
     if args.realtime or args.diarize or args.transcribe:
         diarization = DiarizationPipeline(
             model_name=args.diarization_model,
@@ -155,7 +175,7 @@ def main():
             device=args.device
         )
         log.info(f"Diarization pipeline initialized, using device: {args.device}")
-        
+
         if args.realtime or args.transcribe:
             transcription = TranscriptionPipeline(
                 model_name=args.transcription_model,
@@ -170,7 +190,7 @@ def main():
 
             try:
                 original_transcribe = transcription.transcribe_audio
-                
+
                 def patched_transcribe_audio(self, audio, sample_rate=None, return_timestamps=False):
                     """Patched version to ensure VAD filter is disabled"""
                     if hasattr(self.model, 'transcribe'):
@@ -180,9 +200,9 @@ def main():
                                 language=self.language,
                                 beam_size=self.beam_size,
                                 word_timestamps=return_timestamps,
-                                vad_filter=False 
+                                vad_filter=False
                             )
-                            
+
                             result = {
                                 "text": "",
                                 "chunks": [],
@@ -197,27 +217,27 @@ def main():
                                             "text": word.word,
                                             "timestamp": [word.start, word.end]
                                         })
-                            
+
                             result["text"] = result["text"].strip()
                             return result
-                        
+
                         except Exception as e:
                             log.error(f"Direct transcription failed: {e}")
                             return original_transcribe(audio, sample_rate, return_timestamps)
                     else:
                         return original_transcribe(audio, sample_rate, return_timestamps)
-                    
+
                 transcription.transcribe_audio = patched_transcribe_audio.__get__(transcription, type(transcription))
                 log.info("Patched transcription pipeline to disable VAD filtering")
-                
+
             except Exception as e:
                 log.warning(f"Could not patch transcription pipeline: {e}")
 
     if args.realtime:
         global realtime_instance
-        
+
         log.info("Starting real-time audio processing mode")
-        
+
         if args.device_index is None:
             devices = audio_devices()
             if len(devices) > 1:
@@ -230,13 +250,13 @@ def main():
             diarization_pipeline=diarization,
             transcription_pipeline=transcription,
             sample_rate=args.sample_rate,
-            chunk_size=args.chunk_size, 
+            chunk_size=args.chunk_size,
             vad_threshold=args.vad_threshold,
             language=args.language,
             device_index=args.device_index,
             output_dir=args.output
         )
-        
+
         try:
             realtime_instance.start()
             while realtime_instance.is_running:
@@ -251,10 +271,10 @@ def main():
                 realtime_instance.stop()
 
         log.info("Real-time processing complete")
-        
+
         log.info(f"Results saved to: {args.output}")
         return
-    
+
     if args.audio:
         if not os.path.exists(args.audio):
             log.error("Audio File Not Found: %s", args.audio)
@@ -287,12 +307,12 @@ def main():
             num_speakers = diarization_results["speaker"].nunique()
             total_duration = diarization_results["end"].max()
             log.info("Detected %s speakers in Total Duration %.2f seconds", num_speakers if num_speakers else "Failed In Prediction", total_duration)
-            
+
         if args.transcribe:
             if diarization_results is None:
                 log.error("Transcription requires diarization results. Please enable diarization.")
                 return
-            
+
             log.info("Initializing Transcription Pipeline")
             transcription = TranscriptionPipeline(
                 model_name=args.transcription_model,
@@ -303,19 +323,19 @@ def main():
                 language=args.language,
                 beam_size=args.beam_size
             )
-            
+
             log.info("Processing Audio for Transcription using: %s", args.transcription_model)
             temp_dir = os.path.join(args.output, "temp")
-            
+
             results = transcription.process_diarization(
                 diarization_results,
                 args.audio,
                 min_segment_length=args.min_segment_length,
                 temp_dir=temp_dir
             )
-            
+
             diarization_results = results
-            
+
             log.info("Transcription completed")
 
         formats = [args.format] if args.format != "all" else ["csv", "rttm", "json"]
@@ -327,17 +347,17 @@ def main():
                 results_copy['segment_str'] = results_copy['segment'].apply(str)
                 results_copy.drop('segment', axis=1).to_csv(output_path, index=False)
                 log.info(f"Saved CSV results to: {output_path}")
-                
+
             elif fmt == "rttm":
                 output_path = os.path.join(args.output, f"{basename}_diarization.rttm")
                 export_to_rttm(diarization_results, output_path, args.audio)
                 log.info(f"Saved RTTM results to: {output_path}")
-                
+
             elif fmt == "json":
                 output_path = os.path.join(args.output, f"{basename}_diarization.json")
                 export_to_json(diarization_results, output_path)
                 log.info(f"Saved JSON results to: {output_path}")
-        
+
         log.info(f"Processing Finished Successfully")
 
 if __name__ == "__main__":
