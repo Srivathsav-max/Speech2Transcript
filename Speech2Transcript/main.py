@@ -7,7 +7,7 @@ from diarization import DiarizationPipeline
 from transcription import TranscriptionPipeline
 from realtimestt import RealTimeSTT
 
-from summarizers import AdvancedMedicalSummarizer, GeminiSummarizer
+from summarizers import GeminiSummarizer
 
 from utils import export_to_rttm, export_to_json, merge_speakers, get_device, audio_devices
 
@@ -72,11 +72,11 @@ def main():
     # Summarizer options
     summarizer_group = parser.add_argument_group("Transcript Summarization")
     summarizer_group.add_argument("--summarize", action="store_true", help="Generate a summary of the transcript")
-    summarizer_group.add_argument("--detailed", action="store_true", help="Generate a more detailed summary with comprehensive analysis")
     summarizer_group.add_argument("--summary-output", default="summary", help="Output filename for the summary (without extension)")
-    summarizer_group.add_argument("--use-gemini", action="store_true", help="Use Google Gemini API for generating summaries")
     summarizer_group.add_argument("--gemini-api-key", type=str, help="API key for Google Gemini (defaults to GOOGLE_API_KEY environment variable)")
-    summarizer_group.add_argument("--gemini-model", default="gemini-pro", help="Gemini model to use for summarization")
+    summarizer_group.add_argument("--gemini-model", default="gemini-2.0-pro", help="Gemini model to use for summarization")
+    summarizer_group.add_argument("--temperature", type=float, default=0.4, help="Temperature setting for Gemini model (lower = more deterministic)")
+    summarizer_group.add_argument("--max-tokens", type=int, default=4000, help="Maximum output tokens for Gemini generation")
 
     args = parser.parse_args()
 
@@ -89,7 +89,7 @@ def main():
     else:
         basename = "output"
 
-    if args.summarize or args.detailed or args.use_gemini:
+    if args.summarize:
         if args.transcript_file is None and not os.path.exists(os.path.join(args.output, f"{basename}_diarization.json")):
             log.error("No transcript file available for summarization")
         else:
@@ -99,68 +99,55 @@ def main():
             summary_basename = args.summary_output if args.summary_output != "summary" else basename
 
             try:
-                # Choose appropriate summarizer based on flags
-                if args.use_gemini:
-                    log.info("Initializing Gemini-powered summarizer")
-                    summarizer = GeminiSummarizer(
-                        api_key=args.gemini_api_key,
-                        model_name=args.gemini_model,
-                        logger=log
-                    )
-                    output_path = os.path.join(args.output, f"{summary_basename}_gemini_summary.json")
-                    
-                    log.info(f"Processing transcript with Gemini: {transcript_file}")
-                    result = summarizer.process_transcript(
-                        transcript_path=transcript_file,
-                        output_path=output_path,
-                        text_column="transcription",
-                        speaker_column="speaker"
-                    )
-                    
-                    log.info("=" * 60)
-                    log.info("Gemini-Generated Summary:")
-                    log.info("=" * 60)
-                    log.info(result["summary"])
-                    log.info("=" * 60)
-                    
-                    log.info(f"Summary saved to: {output_path}")
-                    log.info(f"Text summary saved to: {output_path.replace('.json', '_summary.txt')}")
-                    
-                else:
-                    # Use the AdvancedMedicalSummarizer for traditional extraction-based summaries
-                    log.info("Initializing transcript summarizer")
-                    summarizer = AdvancedMedicalSummarizer(logger=log)
-                    output_path = os.path.join(args.output, f"{summary_basename}_enhanced_summary.json")
+                # Initialize Gemini summarizer
+                log.info("Initializing Gemini-powered summarizer")
+                summarizer = GeminiSummarizer(
+                    api_key=args.gemini_api_key,
+                    model_name=args.gemini_model,
+                    logger=log,
+                    temperature=args.temperature,
+                    max_output_tokens=args.max_tokens
+                )
+                output_path = os.path.join(args.output, f"{summary_basename}_gemini_summary.json")
 
-                    log.info(f"Processing transcript with comprehensive analysis: {transcript_file}")
-                    result = summarizer.process_transcript(
-                        transcript_path=transcript_file,
-                        output_path=output_path,
-                        text_column="transcription",
-                        speaker_column="speaker"
-                    )
+                log.info(f"Processing transcript with Gemini model: {args.gemini_model}")
+                result = summarizer.process_transcript(
+                    transcript_path=transcript_file,
+                    output_path=output_path,
+                    text_column="transcription",
+                    speaker_column="speaker"
+                )
 
-                    log.info("=" * 60)
-                    log.info("Enhanced Transcript Summary:")
-                    log.info("=" * 60)
-                    log.info(result["detailed_summary"])
-                    log.info("=" * 60)
+                log.info("=" * 60)
+                log.info("Gemini-Generated Summary:")
+                log.info("=" * 60)
+                log.info(result["summary"])
+                log.info("=" * 60)
 
-                    # Print health assessment if available
-                    if "health_assessment" in result["extracted_data"]:
-                        assessment = result["extracted_data"]["health_assessment"]
-                        log.info("Health Status: %s (confidence: %.2f)",
-                                assessment.get("status", "Unknown").upper(),
-                                assessment.get("confidence", 0.0))
+                # Print extracted entities if available
+                if "extracted_info" in result and result["extracted_info"]:
+                    log.info("Extracted Patient Information:")
+                    log.info(f"Patient Name: {result['extracted_info'].get('patient_name', 'Unknown')}")
+                    log.info(f"Provider Name: {result['extracted_info'].get('provider_name', 'Unknown')}")
+                    
+                    if "conditions" in result["extracted_info"] and result["extracted_info"]["conditions"]:
+                        log.info(f"Medical Conditions: {', '.join(result['extracted_info']['conditions'])}")
+                    
+                    if "medications" in result["extracted_info"] and result["extracted_info"]["medications"]:
+                        log.info(f"Medications: {', '.join(result['extracted_info']['medications'])}")
+                    
+                    if "vital_signs" in result["extracted_info"] and result["extracted_info"]["vital_signs"]:
+                        log.info("Vital Signs:")
+                        for key, value in result["extracted_info"]["vital_signs"].items():
+                            log.info(f"  {key}: {value}")
 
-                    log.info(f"Comprehensive analysis saved to: {output_path}")
-                    log.info(f"Text summary saved to: {output_path.replace('.json', '_summary.txt')}")
+                log.info(f"Summary saved to: {output_path}")
+                log.info(f"Text summary saved to: {output_path.replace('.json', '_summary.txt')}")
 
             except Exception as e:
                 log.error(f"Error in transcript summarization: {e}")
                 import traceback
                 traceback.print_exc()
-
 
     if args.list_devices:
         devices = audio_devices()
