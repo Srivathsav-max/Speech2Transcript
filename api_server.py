@@ -167,16 +167,14 @@ def process_audio():
                     num_speakers=params['num_speakers']
                 )
                 
-                # Export results to various formats
-                json_output_path = os.path.join(app.config['OUTPUT_FOLDER'], f"{basename}_diarization.json")
-                from Speech2Transcript.utils import export_to_json
-                export_to_json(diarization_results, json_output_path)
-                
-                result["outputs"]["diarization"] = {
-                    "json": f"/outputs/{basename}_diarization.json",
+                # Convert diarization results to dictionary
+                diarization_data = {
                     "num_speakers": diarization_results["speaker"].nunique(),
-                    "duration": float(diarization_results["end"].max())
+                    "duration": float(diarization_results["end"].max()),
+                    "segments": diarization_results.to_dict('records')
                 }
+                
+                result["outputs"]["diarization"] = diarization_data
                 
                 # Run transcription if requested
                 if params['transcribe']:
@@ -194,11 +192,8 @@ def process_audio():
                     # Update the diarization results with transcriptions
                     diarization_results = transcription_results
                     
-                    # Export updated results with transcription
-                    export_to_json(diarization_results, json_output_path)
-                    
                     result["outputs"]["transcription"] = {
-                        "json": f"/outputs/{basename}_diarization.json"
+                        "segments": diarization_results.to_dict('records')
                     }
                 
                 # Run summarization if requested
@@ -207,31 +202,25 @@ def process_audio():
                     
                     summarizer = init_gemini_summarizer()
                     
-                    summary_output_path = os.path.join(app.config['OUTPUT_FOLDER'], f"{basename}_gemini_summary.json")
+                    # Create transcript data for summarizer
+                    transcript_data = {
+                        "segments": diarization_results.to_dict('records')
+                    }
                     
                     summary_result = summarizer.process_transcript(
-                        transcript_path=json_output_path,
-                        output_path=summary_output_path,
+                        transcript_data=transcript_data,
                         text_column="transcription",
                         speaker_column="speaker"
                     )
                     
-                    # Extract key information for response
+                    # Add summary to response
                     result["outputs"]["summary"] = {
-                        "json": f"/outputs/{basename}_gemini_summary.json",
-                        "text": f"/outputs/{basename}_gemini_summary_summary.txt",
-                        "patient_name": summary_result["extracted_info"].get("patient_name", "Unknown"),
-                        "provider_name": summary_result["extracted_info"].get("provider_name", "Unknown"),
+                        "summary": summary_result["summary"],
+                        "extracted_info": summary_result["extracted_info"]
                     }
-                    
-                    if "conditions" in summary_result["extracted_info"]:
-                        result["outputs"]["summary"]["conditions"] = summary_result["extracted_info"]["conditions"]
-                    
-                    if "medications" in summary_result["extracted_info"]:
-                        result["outputs"]["summary"]["medications"] = summary_result["extracted_info"]["medications"]
             
             return jsonify(result)
-        
+            
         except Exception as e:
             logger.error(f"Error processing file: {str(e)}")
             import traceback
