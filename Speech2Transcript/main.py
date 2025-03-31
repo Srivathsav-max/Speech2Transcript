@@ -74,7 +74,7 @@ def main():
     summarizer_group.add_argument("--summarize", action="store_true", help="Generate a summary of the transcript")
     summarizer_group.add_argument("--summary-output", default="summary", help="Output filename for the summary (without extension)")
     summarizer_group.add_argument("--gemini-api-key", type=str, help="API key for Google Gemini (defaults to GOOGLE_API_KEY environment variable)")
-    summarizer_group.add_argument("--gemini-model", default="gemini-2.0-pro", help="Gemini model to use for summarization")
+    summarizer_group.add_argument("--gemini-model", default="gemini-2.0-flash", help="Gemini model to use for summarization")
     summarizer_group.add_argument("--temperature", type=float, default=0.4, help="Temperature setting for Gemini model (lower = more deterministic)")
     summarizer_group.add_argument("--max-tokens", type=int, default=4000, help="Maximum output tokens for Gemini generation")
 
@@ -82,7 +82,7 @@ def main():
 
     signal.signal(signal.SIGINT, signal_handler)
 
-    if os.path.exists(args.transcript_file) and args.transcript_file is not None:
+    if args.transcript_file is not None and os.path.exists(args.transcript_file):
         basename = os.path.splitext(os.path.basename(args.transcript_file))[0]
     elif args.audio:
         basename = os.path.splitext(os.path.basename(args.audio))[0]

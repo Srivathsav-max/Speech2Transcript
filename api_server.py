@@ -1,16 +1,17 @@
 import os
-import json
 import logging
-import tempfile
 from flask import Flask, request, jsonify, send_from_directory
 from flask_cors import CORS
 from werkzeug.utils import secure_filename
-import pandas as pd
 
 # Import the Speech2Transcript components
 from Speech2Transcript.diarization import DiarizationPipeline
 from Speech2Transcript.transcription import TranscriptionPipeline
 from Speech2Transcript.summarizers import GeminiSummarizer
+
+from dotenv import load_dotenv
+
+load_dotenv()
 
 # Set up logging
 logging.basicConfig(
@@ -23,7 +24,7 @@ logger = logging.getLogger(__name__)
 app = Flask(__name__, static_folder='outputs')
 CORS(app, resources={
     r"/*": {  # Allow CORS for all routes
-        "origins": "http://localhost:3000",  # Frontend URL
+        "origins": "*",  # Frontend URL
         "methods": ["GET", "POST", "OPTIONS"],
         "allow_headers": ["Content-Type", "Authorization", "Accept"],
         "expose_headers": ["Content-Type", "Content-Disposition"],
@@ -105,7 +106,8 @@ def init_gemini_summarizer():
     if gemini_summarizer is None:
         logger.info("Initializing Gemini summarizer")
         gemini_summarizer = GeminiSummarizer(
-            model_name="gemini-2.0-pro",
+            api_key=os.getenv("GOOGLE_API_KEY"),
+            model_name="gemini-2.0-flash",
             temperature=0.1,
             max_output_tokens=2048
         )

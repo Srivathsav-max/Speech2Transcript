@@ -4,7 +4,7 @@ import pandas as pd
 from pyannote.audio import Pipeline
 from typing import Optional, Union
 
-from .utils import segments_to_df
+from Speech2Transcript.utils import segments_to_df
 
 class DiarizationPipeline:
     """

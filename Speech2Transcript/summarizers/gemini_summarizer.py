@@ -2,8 +2,10 @@ import os
 import json
 import logging
 from typing import Dict, Any, Optional, List
-import pandas as pd
-import re
+from dotenv import load_dotenv
+
+# Load environment variables
+load_dotenv()
 
 # Import base summarizer
 from .base_summarizer import BaseSummarizer
