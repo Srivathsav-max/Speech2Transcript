@@ -19,6 +19,9 @@ from .gemini_helpers import (
     prepare_gemini_extraction_prompt
 )
 
+# Import telemedical detection utilities
+from .telemedical_detector import detect_telemedical_content, get_non_telemedical_message
+
 try:
     from google import genai
     GEMINI_AVAILABLE = True
@@ -215,7 +218,8 @@ class GeminiSummarizer(BaseSummarizer):
                           transcript_data: Optional[Dict[str, Any]] = None,
                           output_path: Optional[str] = None,
                           text_column: str = "transcription",
-                          speaker_column: str = "speaker") -> Dict[str, Any]:
+                          speaker_column: str = "speaker",
+                          force_process: bool = False) -> Dict[str, Any]:
         """
         Process a transcript and generate a comprehensive summary.
 
@@ -225,6 +229,7 @@ class GeminiSummarizer(BaseSummarizer):
             output_path: Optional path to save results
             text_column: Column name containing the transcription text
             speaker_column: Column name containing the speaker ID
+            force_process: If True, process even when content is not telemedical
 
         Returns:
             Dictionary with the summary and extracted information
@@ -245,6 +250,25 @@ class GeminiSummarizer(BaseSummarizer):
 
         # Extract text from segments
         text_data = self.extract_text_from_segments(segments, text_column, speaker_column)
+        
+        # Check if the conversation is telemedical before proceeding with expensive API calls
+        is_telemedical, matched_categories = detect_telemedical_content(text_data["full_text"])
+        self._log(f"Telemedical detection: {is_telemedical}")
+        
+        # If content is not telemedical and we're not forcing processing, return early
+        if not is_telemedical and not force_process:
+            self._log("Content is not telemedical - skipping Gemini API calls to save costs", level="warning")
+            return {
+                "summary": get_non_telemedical_message(),
+                "extracted_info": {
+                    "is_telemedical": False,
+                    "matched_categories": list(matched_categories.keys()) if matched_categories else []
+                }
+            }
+        
+        # Content is telemedical or we're forcing processing
+        if not is_telemedical and force_process:
+            self._log("Content is not telemedical, but force_process=True - proceeding with Gemini API", level="info")
 
         # Identify speakers
         speakers = identify_speakers(text_data["conversation"])
@@ -304,6 +328,7 @@ class GeminiSummarizer(BaseSummarizer):
             "summary": summary,
             "extracted_info": {
                 **merged_info,
+                "is_telemedical": True,  # Mark as telemedical since we processed it
                 "speakers": speakers,
                 "detailed_entities": extracted_entities
             }

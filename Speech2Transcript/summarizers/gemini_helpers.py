@@ -111,81 +111,78 @@ def generate_gemini_prompt(conversation_text: str, basic_info: Dict[str, Any], p
     """
     if prompt_type == "summary":
         return f"""
-You are a medical summarization expert. I need you to create a comprehensive, coherent narrative summary of the following healthcare conversation between a care manager and a patient.
+Write a direct, concise medical summary of this telehealth conversation. Begin immediately with the summary content - do not include any introductory phrases like "based on the transcript" or similar preambles.
 
-Patient Name: {basic_info['patient_name']}
-Provider: {basic_info['provider_name']}
-Key Conditions: {', '.join(basic_info['conditions']) if basic_info['conditions'] else 'Unknown'}
-Medications: {', '.join(basic_info['medications']) if basic_info['medications'] else 'Unknown'}
+PATIENT INFO:
+- Name: {basic_info['patient_name']}
+- Provider: {basic_info['provider_name']}
+- Conditions: {', '.join(basic_info['conditions']) if basic_info['conditions'] else 'Unknown'}
+- Medications: {', '.join(basic_info['medications']) if basic_info['medications'] else 'Unknown'}
 
-Here's the transcript:
+CONVERSATION:
 ```
 {conversation_text}
 ```
 
-Please create a professional, cohesive narrative summary that:
-1. Identifies who called whom and for what purpose
-2. Summarizes the patient's reported health status, symptoms, and recent events
-3. Covers key vitals, medications and adherence
-4. Includes information about diet, exercise, and other lifestyle factors
-5. Notes preventive care status and any barriers to care
-6. Concludes with follow-up plans
-
-The summary should be 4-5 paragraphs in length, written in third-person narrative style like a medical note. Use a professional tone and focus on medically relevant information. Do not use bullet points or structured headings - write it as a continuous narrative similar to a medical progress note.
+REQUIREMENTS:
+- Start immediately with "Patient [name] had a telehealth appointment with [provider]..."
+- Write a continuous narrative (no bullet points or headers)
+- Include: call purpose, health status, symptoms, vitals, medications, adherence
+- Mention lifestyle factors (diet, exercise) if discussed
+- End with follow-up plans
+- Use professional, clinical tone
+- 4-5 paragraphs in third-person perspective
+- Be factual and precise - only include information from the conversation
 """
     elif prompt_type == "extract_entities":
         return f"""
-You are a medical information extraction specialist. I need you to extract specific information from the following healthcare conversation between a care manager and a patient. Be precise and only extract what is clearly stated in the text.
+Extract medical entities from this telehealth conversation directly into JSON format. Do not include explanatory text before or after the JSON.
 
-Here's the transcript:
+CONVERSATION:
 ```
 {conversation_text}
 ```
 
-Please extract the following information in JSON format:
-1. Patient name (full name if available)
-2. Provider/doctor name (with title)
-3. Medical conditions mentioned (list all clearly stated conditions)
-4. Medications mentioned (list names and dosages if available)
-5. Vital signs (include blood pressure, glucose levels, weight, or any other measurements mentioned)
-6. Lifestyle information (diet, exercise, smoking status, alcohol consumption)
-7. Follow-up plans (appointments, tests, calls)
-
-IMPORTANT:
-- Only include information explicitly mentioned in the transcript
-- Use "Unknown" for fields where no information is provided
-- Do not make assumptions or guess information
-- Format your response as a clean JSON object
-- Include a confidence level (high, medium, low) for each extracted entity
-- Be especially careful with names and medications to avoid hallucinations
-
-Return your answer as a structured JSON object without any additional explanations.
+REQUIREMENTS:
+- Extract only explicitly mentioned information (no assumptions)
+- Include: patient name, provider name, conditions, medications, vital signs
+- Always use "Unknown" for missing fields, never leave fields empty
+- Assign confidence level (high/medium/low) to each entity
+- Focus on precision over completeness
+- Return valid, parseable JSON only
 """
     elif prompt_type == "medication_adherence":
         return f"""
-Analyze the following healthcare conversation between a care manager and a patient to assess medication adherence. Focus only on what is explicitly stated about taking medications as prescribed.
+Assess medication adherence from this telehealth conversation. Provide a direct analysis without preamble phrases.
 
-Here's the transcript:
+CONVERSATION:
 ```
 {conversation_text}
 ```
 
-Based solely on the information in this transcript:
-1. Is the patient taking their medications as prescribed?
-2. Are there any challenges or barriers to medication adherence mentioned?
-3. Are there any specific medications that the patient struggles to take regularly?
-4. What is the patient's attitude toward their medication regimen?
-
-Return a concise assessment of the patient's medication adherence using only information explicitly mentioned in the transcript. Rate the adherence as "Good", "Variable", "Poor", or "Unknown" with a brief explanation. Do not make assumptions beyond what is directly stated.
+REQUIREMENTS:
+- Determine if patient is taking medications as prescribed (Good/Variable/Poor/Unknown)
+- Identify specific adherence challenges mentioned
+- Note any medications with adherence issues
+- Assess patient's attitude toward medication regimen
+- Base assessment only on explicitly stated information
+- Provide short, precise assessment
 """
     else:
         return f"""
-Analyze this healthcare conversation between a care manager and a patient:
+Provide a factual, concise summary of this healthcare conversation directly, with no introductory phrases.
+
+CONVERSATION:
 ```
 {conversation_text}
 ```
 
-Provide a concise, factual summary focusing on the key medical information.
+REQUIREMENTS:
+- Start immediately with the key points
+- Focus only on medical information
+- Use professional, clinical tone
+- Be brief and factual
+- Include only information directly stated in the conversation
 """
 
 def extract_basic_info(conversation: List[tuple], speakers: Dict[str, str]) -> Dict[str, Any]:
@@ -282,67 +279,48 @@ def prepare_gemini_extraction_prompt(conversation_text: str) -> str:
     """
     # Create the initial part of the prompt with the conversation text
     prompt = f"""
-You are a medical data extraction expert. Extract structured information from this healthcare conversation, returning ONLY valid JSON.
+Return only valid JSON with structured medical data from this telehealth conversation.
 
-Conversation:
+CONVERSATION:
 ```
 {conversation_text}
 ```
 
-Extract the following information:
-1. patient_name: The patient's full name if available (default to "Patient" if unclear)
-2. provider_name: The healthcare provider's name with title if mentioned
-3. conditions: Array of medical conditions mentioned (empty array if none)
-4. medications: Array of objects with name and dosage properties
-5. vital_signs: Object with properties like blood_pressure, glucose, weight, etc.
-6. lifestyle: Object with exercise, diet, smoking_status properties
-7. follow_up: Object with next_appointment, action_items properties
-
-IMPORTANT RULES:
-- Only extract information that is explicitly stated in the conversation
-- Use null for unknown values
-- Never hallucinate or invent information
-- Include a confidence property (high, medium, or low) for each extracted field
-- Format your response as valid, parseable JSON without ANY explanatory text before or after
-- Do not include code markup tags (like ```json)
-- Focus on accuracy over comprehensiveness
-
-Return only the following JSON structure, properly filled in:
+REQUIREMENTS:
+- Extract patient name, provider name, conditions, medications, vital signs
+- Include only explicitly stated information
+- Use "Unknown" for any missing information
+- Assign confidence levels (high/medium/low)
+- Return only valid JSON
 """
 
     # Add the JSON schema template separately (not as part of the f-string)
     json_schema = """
 {
-  "patient_name": {"value": "string", "confidence": "string"},
-  "provider_name": {"value": "string", "confidence": "string"},
+  "is_telemedical": true,
+  "patient_name": {"value": "Patient name", "confidence": "high/medium/low"},
+  "provider_name": {"value": "Provider name", "confidence": "high/medium/low"},
   "conditions": {
-    "list": ["string"],
-    "confidence": "string"
+    "list": ["condition1", "condition2"],
+    "confidence": "high/medium/low"
   },
   "medications": {
     "list": [
-      {"name": "string", "dosage": "string"}
+      {"name": "medication name", "dosage": "dosage info"}
     ],
-    "adherence": "string",
-    "confidence": "string"
+    "adherence": "Good/Variable/Poor/Unknown",
+    "confidence": "high/medium/low"
   },
   "vital_signs": {
-    "blood_pressure": "string",
+    "blood_pressure": "systolic/diastolic",
     "glucose": 0,
-    "weight": "string",
-    "other": {},
-    "confidence": "string"
-  },
-  "lifestyle": {
-    "exercise": "string",
-    "diet": "string",
-    "smoking_status": "string",
-    "confidence": "string"
+    "weight": "value with units",
+    "confidence": "high/medium/low"
   },
   "follow_up": {
-    "next_appointment": "string",
-    "action_items": ["string"],
-    "confidence": "string"
+    "next_appointment": "date/time info",
+    "action_items": ["item1", "item2"],
+    "confidence": "high/medium/low"
   }
 }
 """

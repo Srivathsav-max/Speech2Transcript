@@ -77,6 +77,7 @@ def main():
     summarizer_group.add_argument("--gemini-model", default="gemini-2.0-flash", help="Gemini model to use for summarization")
     summarizer_group.add_argument("--temperature", type=float, default=0.4, help="Temperature setting for Gemini model (lower = more deterministic)")
     summarizer_group.add_argument("--max-tokens", type=int, default=4000, help="Maximum output tokens for Gemini generation")
+    summarizer_group.add_argument("--force-process", action="store_true", help="Force processing even if content is not telemedical")
 
     args = parser.parse_args()
 
@@ -115,13 +116,22 @@ def main():
                     transcript_path=transcript_file,
                     output_path=output_path,
                     text_column="transcription",
-                    speaker_column="speaker"
+                    speaker_column="speaker",
+                    force_process=args.force_process
                 )
 
                 log.info("=" * 60)
                 log.info("Gemini-Generated Summary:")
                 log.info("=" * 60)
                 log.info(result["summary"])
+                log.info("=" * 60)
+
+                # Show telemedical status if available
+                if "extracted_info" in result and "is_telemedical" in result["extracted_info"]:
+                    is_telemedical = result["extracted_info"]["is_telemedical"]
+                    log.info(f"Content is {'telemedical' if is_telemedical else 'not telemedical'}")
+                    if not is_telemedical and args.force_process:
+                        log.info("Processed anyway due to --force-process flag")
                 log.info("=" * 60)
 
                 # Print extracted entities if available
