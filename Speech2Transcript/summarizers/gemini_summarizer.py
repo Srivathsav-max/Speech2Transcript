@@ -22,6 +22,23 @@ from .gemini_helpers import (
 # Import telemedical detection utilities
 from .telemedical_detector import detect_telemedical_content, get_non_telemedical_message
 
+# Import HIPAA compliance utilities
+from .hipaa_compliance import (
+    verify_hipaa_compliance,
+    detect_hipaa_identifiers,
+    redact_hipaa_identifiers,
+    preprocess_transcript_for_hipaa,
+    generate_hipaa_compliant_prompt
+)
+
+# Import enhanced nurse summary utilities
+from .nurse_summary import (
+    generate_nurse_summary_prompt,
+    format_nurse_summary,
+    enhance_with_medical_terminology,
+    structure_clinical_summary
+)
+
 try:
     from google import genai
     GEMINI_AVAILABLE = True
@@ -66,7 +83,7 @@ class GeminiSummarizer(BaseSummarizer):
         self.max_output_tokens = max_output_tokens
         self.top_p = top_p
         self.top_k = top_k
-        
+
         # Check if Gemini is available and configure it
         if GEMINI_AVAILABLE and self.api_key:
             try:
@@ -79,7 +96,7 @@ class GeminiSummarizer(BaseSummarizer):
                     models = self.client.models.list_models()
                     model_names = [model.name for model in models]
                     self._log(f"Available Gemini models: {', '.join(model_names)}")
-                    
+
                     # Check if our model is available
                     if not any(self.model_name in model_name for model_name in model_names):
                         closest_match = next((m for m in model_names if "gemini" in m.lower()), None)
@@ -159,30 +176,30 @@ class GeminiSummarizer(BaseSummarizer):
 
             # Return a fallback message
             return f"Error generating content: {str(e)}"
-            
+
     def _extract_entities_with_gemini(self, conversation_text: str) -> Dict[str, Any]:
         """
         Extract structured entities from the conversation using Gemini.
-        
+
         Args:
             conversation_text: The full conversation text
-            
+
         Returns:
             Dictionary with extracted entities
         """
         # Create a specialized prompt for entity extraction
         extraction_prompt = prepare_gemini_extraction_prompt(conversation_text)
-        
+
         try:
             self._log("Extracting entities from conversation with Gemini...")
-            
+
             # The extraction uses the same approach as regular generation
             # Note: We can't change temperature directly anymore with the simplified approach
             self._log("Using fixed parameters for entity extraction")
-            
+
             # Generate extraction response
             response_text = self._generate_summary_with_gemini(extraction_prompt)
-            
+
             # Parse the JSON response
             try:
                 # Clean up the response - sometimes Gemini includes markdown code blocks
@@ -195,11 +212,11 @@ class GeminiSummarizer(BaseSummarizer):
                     else:
                         # Just remove the first markdown marker if no ending marker
                         response_text = response_text[start_idx:].strip()
-                        
+
                 # Sometimes JSON responses include the language identifier
                 if response_text.startswith("json"):
                     response_text = response_text[4:].strip()
-                        
+
                 self._log("Attempting to parse JSON response")
                 extracted_data = json.loads(response_text)
                 self._log("Successfully extracted structured data from conversation")
@@ -208,7 +225,7 @@ class GeminiSummarizer(BaseSummarizer):
                 self._log(f"Error parsing Gemini extraction response as JSON: {e}", level="error")
                 self._log(f"Raw response: {response_text}", level="error")
                 return {}
-                
+
         except Exception as e:
             self._log(f"Error in entity extraction: {e}", level="error")
             return {}
@@ -219,7 +236,9 @@ class GeminiSummarizer(BaseSummarizer):
                           output_path: Optional[str] = None,
                           text_column: str = "transcription",
                           speaker_column: str = "speaker",
-                          force_process: bool = False) -> Dict[str, Any]:
+                          force_process: bool = False,
+                          enforce_hipaa: bool = True,
+                          nurse_style_summary: bool = True) -> Dict[str, Any]:
         """
         Process a transcript and generate a comprehensive summary.
 
@@ -230,6 +249,8 @@ class GeminiSummarizer(BaseSummarizer):
             text_column: Column name containing the transcription text
             speaker_column: Column name containing the speaker ID
             force_process: If True, process even when content is not telemedical
+            enforce_hipaa: If True, apply HIPAA compliance rules (default: True)
+            nurse_style_summary: If True, use enhanced nurse-like summary format (default: True)
 
         Returns:
             Dictionary with the summary and extracted information
@@ -239,6 +260,11 @@ class GeminiSummarizer(BaseSummarizer):
         if not data:
             self._log("No transcript data available", level="error")
             return {"error": "No transcript data available"}
+
+        # HIPAA Compliance Pre-processing
+        if enforce_hipaa:
+            self._log("Applying HIPAA compliance preprocessing")
+            data = preprocess_transcript_for_hipaa(data)
 
         # Extract segments
         segments = data.get("segments", [])
@@ -250,11 +276,11 @@ class GeminiSummarizer(BaseSummarizer):
 
         # Extract text from segments
         text_data = self.extract_text_from_segments(segments, text_column, speaker_column)
-        
+
         # Check if the conversation is telemedical before proceeding with expensive API calls
         is_telemedical, matched_categories = detect_telemedical_content(text_data["full_text"])
         self._log(f"Telemedical detection: {is_telemedical}")
-        
+
         # If content is not telemedical and we're not forcing processing, return early
         if not is_telemedical and not force_process:
             self._log("Content is not telemedical - skipping Gemini API calls to save costs", level="warning")
@@ -265,7 +291,7 @@ class GeminiSummarizer(BaseSummarizer):
                     "matched_categories": list(matched_categories.keys()) if matched_categories else []
                 }
             }
-        
+
         # Content is telemedical or we're forcing processing
         if not is_telemedical and force_process:
             self._log("Content is not telemedical, but force_process=True - proceeding with Gemini API", level="info")
@@ -276,38 +302,46 @@ class GeminiSummarizer(BaseSummarizer):
 
         # Extract basic information for context (fallback for prompting)
         basic_info = extract_basic_info(text_data["conversation"], speakers)
-        
+
         # Use Gemini for detailed entity extraction
         self._log("Extracting detailed entities using Gemini")
-        extracted_entities = self._extract_entities_with_gemini(text_data["full_text"])
         
+        # Use HIPAA-compliant extraction prompt if enforcing HIPAA
+        if enforce_hipaa:
+            # First redact identifiers from text before sending to API
+            redacted_text = redact_hipaa_identifiers(text_data["full_text"])
+            self._log("Applied HIPAA-compliant redaction to conversation text")
+            extracted_entities = self._extract_entities_with_gemini(redacted_text)
+        else:
+            extracted_entities = self._extract_entities_with_gemini(text_data["full_text"])
+
         # Merge extracted entities with basic info, preferring Gemini results if available
         merged_info = {}
-        
+
         # Get patient name
         if extracted_entities and "patient_name" in extracted_entities and extracted_entities["patient_name"].get("value"):
             merged_info["patient_name"] = extracted_entities["patient_name"]["value"]
         else:
             merged_info["patient_name"] = basic_info["patient_name"]
-            
+
         # Get provider name
         if extracted_entities and "provider_name" in extracted_entities and extracted_entities["provider_name"].get("value"):
             merged_info["provider_name"] = extracted_entities["provider_name"]["value"]
         else:
             merged_info["provider_name"] = basic_info["provider_name"]
-            
+
         # Get conditions
         if extracted_entities and "conditions" in extracted_entities and extracted_entities["conditions"].get("list"):
             merged_info["conditions"] = extracted_entities["conditions"]["list"]
         else:
             merged_info["conditions"] = basic_info["conditions"]
-            
+
         # Get medications
         if extracted_entities and "medications" in extracted_entities and extracted_entities["medications"].get("list"):
             merged_info["medications"] = [med["name"] for med in extracted_entities["medications"]["list"]]
         else:
             merged_info["medications"] = basic_info["medications"]
-            
+
         # Copy vital signs
         merged_info["vital_signs"] = {}
         if extracted_entities and "vital_signs" in extracted_entities:
@@ -317,21 +351,65 @@ class GeminiSummarizer(BaseSummarizer):
         else:
             merged_info["vital_signs"] = basic_info["vital_signs"]
 
-        # Generate prompt for Gemini
-        summary_prompt = generate_gemini_prompt(text_data["full_text"], merged_info, "summary")
+        # Choose appropriate prompt based on options
+        if nurse_style_summary and enforce_hipaa:
+            self._log("Using enhanced nurse-style HIPAA-compliant summary generation")
+            # Use HIPAA-compliant nurse summary generation
+            text_for_summary = redact_hipaa_identifiers(text_data["full_text"]) if enforce_hipaa else text_data["full_text"]
+            summary_prompt = generate_nurse_summary_prompt(text_for_summary, merged_info)
+        elif nurse_style_summary:
+            self._log("Using enhanced nurse-style summary generation")
+            summary_prompt = generate_nurse_summary_prompt(text_data["full_text"], merged_info)
+        elif enforce_hipaa:
+            self._log("Using HIPAA-compliant summary generation")
+            text_for_summary = redact_hipaa_identifiers(text_data["full_text"])
+            summary_prompt = generate_hipaa_compliant_prompt(text_for_summary)
+        else:
+            self._log("Using standard summary generation")
+            summary_prompt = generate_gemini_prompt(text_data["full_text"], merged_info, "summary")
 
         # Generate summary with Gemini
-        summary = self._generate_summary_with_gemini(summary_prompt)
+        self._log(f"Generating summary with model: {self.model_name}")
+        raw_summary = self._generate_summary_with_gemini(summary_prompt)
+        
+        # Post-process the summary to enhance it
+        if nurse_style_summary:
+            summary = format_nurse_summary(raw_summary)
+            summary = enhance_with_medical_terminology(summary)
+            
+            # Structure the summary in SOAP format
+            structured_summary = structure_clinical_summary(summary, merged_info)
+            
+            # Add the structured summary to the results
+            detailed_summary = summary
+            soap_structure = {
+                "subjective": structured_summary["subjective"],
+                "objective": structured_summary["objective"],
+                "assessment": structured_summary["assessment"],
+                "plan": structured_summary["plan"]
+            }
+        else:
+            detailed_summary = raw_summary
+            soap_structure = {}
 
+        # Perform final HIPAA compliance check
+        if enforce_hipaa:
+            hipaa_check = verify_hipaa_compliance(detailed_summary)
+            if not hipaa_check["compliant"]:
+                self._log("HIPAA compliance issues detected in summary, applying redaction", level="warning")
+                detailed_summary = redact_hipaa_identifiers(detailed_summary)
+                
         # Create result object
         result = {
-            "summary": summary,
+            "summary": detailed_summary,
             "extracted_info": {
                 **merged_info,
                 "is_telemedical": True,  # Mark as telemedical since we processed it
                 "speakers": speakers,
                 "detailed_entities": extracted_entities
-            }
+            },
+            "soap_format": soap_structure if soap_structure else None,
+            "hipaa_compliant": enforce_hipaa
         }
 
         # Save results if output path provided

@@ -38,3 +38,4 @@ outputs/
 
 # System
 .DS_Store
+codemcp.toml

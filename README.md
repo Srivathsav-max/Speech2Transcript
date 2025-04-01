@@ -54,6 +54,20 @@ The system offers several approaches to transcript summarization:
 - **Contextual Integration**: Integrates information across the entire conversation for comprehensive coverage
 - **Medical Language**: Uses professional medical terminology and structure appropriate for healthcare documentation
 
+### HIPAA Compliance Features
+- **Protected Health Information (PHI) Detection**: Automatically detects and redacts PHI in transcripts
+- **De-identification**: Replaces identifiable information with generic placeholders
+- **Compliance Verification**: Ensures summaries adhere to HIPAA requirements
+- **Minimal Necessary Information**: Extracts only clinically relevant details
+- **Secure Output**: Generates HIPAA-compliant medical documentation
+
+### Enhanced Nurse-Style Documentation
+- **SOAP Format**: Structures summaries in Subjective, Objective, Assessment, Plan format
+- **Professional Clinical Terminology**: Uses proper medical abbreviations and phrasing
+- **Comprehensive Assessment**: Detailed evaluation organized by body systems
+- **Clear Treatment Plans**: Well-structured follow-up instructions and recommendations
+- **Realistic Nursing Narrative**: Documentation that reads as if written by a healthcare professional
+
 ## Installation
 
 1. Clone this repository
@@ -203,11 +217,20 @@ python -m Speech2Transcript.main --summarize --transcript_file /path/to/transcri
 python -m Speech2Transcript.main --summarize --detailed --transcript_file /path/to/transcript.json --output ./outputs
 
 # Generate a narrative summary using Gemini API (requires API key)
-python -m Speech2Transcript.main --use-gemini --gemini-api-key YOUR_API_KEY --transcript_file /path/to/transcript.json --output ./outputs
+python -m Speech2Transcript.main --summarize --gemini-api-key YOUR_API_KEY --transcript_file /path/to/transcript.json --output ./outputs
+
+# Generate a nurse-like clinical summary with HIPAA compliance
+python -m Speech2Transcript.main --summarize --transcript_file /path/to/transcript.json --output ./outputs
+
+# Generate a standard summary without nurse formatting
+python -m Speech2Transcript.main --summarize --disable-nurse-style --transcript_file /path/to/transcript.json --output ./outputs
+
+# Generate a summary without HIPAA compliance features
+python -m Speech2Transcript.main --summarize --disable-hipaa --transcript_file /path/to/transcript.json --output ./outputs
 
 # Alternatively, set the GOOGLE_API_KEY environment variable
 export GOOGLE_API_KEY=your_api_key_here
-python -m Speech2Transcript.main --use-gemini --transcript_file /path/to/transcript.json --output ./outputs
+python -m Speech2Transcript.main --summarize --transcript_file /path/to/transcript.json --output ./outputs
 
 # Run standalone Gemini test
 python -m Speech2Transcript.gemini_test --transcript /path/to/transcript.json --api-key YOUR_API_KEY

@@ -78,6 +78,8 @@ def main():
     summarizer_group.add_argument("--temperature", type=float, default=0.4, help="Temperature setting for Gemini model (lower = more deterministic)")
     summarizer_group.add_argument("--max-tokens", type=int, default=4000, help="Maximum output tokens for Gemini generation")
     summarizer_group.add_argument("--force-process", action="store_true", help="Force processing even if content is not telemedical")
+    summarizer_group.add_argument("--disable-hipaa", action="store_true", help="Disable HIPAA compliance features")
+    summarizer_group.add_argument("--disable-nurse-style", action="store_true", help="Disable enhanced nurse-style summaries")
 
     args = parser.parse_args()
 
@@ -112,18 +114,60 @@ def main():
                 output_path = os.path.join(args.output, f"{summary_basename}_gemini_summary.json")
 
                 log.info(f"Processing transcript with Gemini model: {args.gemini_model}")
+                # Set HIPAA and nurse-style parameters
+                enforce_hipaa = not args.disable_hipaa
+                nurse_style_summary = not args.disable_nurse_style
+                
                 result = summarizer.process_transcript(
                     transcript_path=transcript_file,
                     output_path=output_path,
                     text_column="transcription",
                     speaker_column="speaker",
-                    force_process=args.force_process
+                    force_process=args.force_process,
+                    enforce_hipaa=enforce_hipaa,
+                    nurse_style_summary=nurse_style_summary
                 )
 
                 log.info("=" * 60)
-                log.info("Gemini-Generated Summary:")
+                
+                # Show appropriate title based on summary type
+                if not args.disable_nurse_style:
+                    log.info("CLINICAL NURSING DOCUMENTATION:")
+                else:
+                    log.info("Gemini-Generated Summary:")
+                
                 log.info("=" * 60)
-                log.info(result["summary"])
+                
+                # Display SOAP format if available
+                if "soap_format" in result and result["soap_format"]:
+                    soap = result["soap_format"]
+                    if soap["subjective"]:
+                        log.info("SUBJECTIVE:")
+                        log.info(soap["subjective"])
+                        log.info("")
+                    
+                    if soap["objective"]:
+                        log.info("OBJECTIVE:")
+                        log.info(soap["objective"])
+                        log.info("")
+                    
+                    if soap["assessment"]:
+                        log.info("ASSESSMENT:")
+                        log.info(soap["assessment"])
+                        log.info("")
+                    
+                    if soap["plan"]:
+                        log.info("PLAN:")
+                        log.info(soap["plan"])
+                else:
+                    # Show standard summary
+                    log.info(result["summary"])
+                
+                # Show HIPAA compliance status
+                if "hipaa_compliant" in result and result["hipaa_compliant"]:
+                    log.info("-" * 60)
+                    log.info("HIPAA compliance features: Enabled")
+                
                 log.info("=" * 60)
 
                 # Show telemedical status if available
