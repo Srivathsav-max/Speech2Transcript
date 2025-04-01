@@ -1,12 +1,8 @@
-# Byte-compiled / optimized / DLL files
+# Python
 __pycache__/
 *.py[cod]
 *$py.class
-
-# C extensions
 *.so
-
-# Distribution / packaging
 .Python
 build/
 develop-eggs/
@@ -21,32 +17,19 @@ sdist/
 var/
 wheels/
 *.egg-info/
-.installed.cfg
-*.egg
 
-# Unit test / coverage reports
-htmlcov/
-.tox/
-.coverage
-.coverage.*
-.cache
-nosetests.xml
-coverage.xml
-*.cover
-.hypothesis/
-.pytest_cache/
-
-# Jupyter Notebook
-.ipynb_checkpoints
-
-# Environments
+# Environment
 .env
 .venv
 env/
 venv/
 ENV/
-env.bak/
-venv.bak/
+
+# Data
+uploads/
+outputs/
+audios/*
+!audios/.gitkeep
 
 # IDE
 .idea/
@@ -54,36 +37,5 @@ venv.bak/
 *.swp
 *.swo
 
-# Speech2Transcript specific
-outputs/
-test_outputs/
-temp/
-audio_cache/
-*.wav
-
-# HuggingFace cache
-.cache/
-.huggingface/
-
-# Model files
-*.pt
-*.pth
-*.bin
-*.model
-*.onnx
-
-# Logs
-logs/
-*.log
-
-# MacOS
+# System
 .DS_Store
-
-# Windows
-Thumbs.db
-ehthumbs.db
-Desktop.ini
-
-# Node modules (for frontend)
-node_modules/
-.next/
