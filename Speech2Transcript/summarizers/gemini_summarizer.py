@@ -238,7 +238,8 @@ class GeminiSummarizer(BaseSummarizer):
                           speaker_column: str = "speaker",
                           force_process: bool = False,
                           enforce_hipaa: bool = True,
-                          nurse_style_summary: bool = True) -> Dict[str, Any]:
+                          nurse_style_summary: bool = True,
+                          descriptive_redaction: bool = True) -> Dict[str, Any]:
         """
         Process a transcript and generate a comprehensive summary.
 
@@ -251,6 +252,7 @@ class GeminiSummarizer(BaseSummarizer):
             force_process: If True, process even when content is not telemedical
             enforce_hipaa: If True, apply HIPAA compliance rules (default: True)
             nurse_style_summary: If True, use enhanced nurse-like summary format (default: True)
+            descriptive_redaction: If True, use descriptive placeholders for redacted content (default: True)
 
         Returns:
             Dictionary with the summary and extracted information
@@ -309,7 +311,8 @@ class GeminiSummarizer(BaseSummarizer):
         # Use HIPAA-compliant extraction prompt if enforcing HIPAA
         if enforce_hipaa:
             # First redact identifiers from text before sending to API
-            redacted_text = redact_hipaa_identifiers(text_data["full_text"])
+            # Note: Using non-descriptive redaction for API processing to avoid confusion
+            redacted_text = redact_hipaa_identifiers(text_data["full_text"], descriptive_redaction=False)
             self._log("Applied HIPAA-compliant redaction to conversation text")
             extracted_entities = self._extract_entities_with_gemini(redacted_text)
         else:
@@ -355,14 +358,15 @@ class GeminiSummarizer(BaseSummarizer):
         if nurse_style_summary and enforce_hipaa:
             self._log("Using enhanced nurse-style HIPAA-compliant summary generation")
             # Use HIPAA-compliant nurse summary generation
-            text_for_summary = redact_hipaa_identifiers(text_data["full_text"]) if enforce_hipaa else text_data["full_text"]
+            # Use non-descriptive redaction for API input to avoid confusion in prompts
+            text_for_summary = redact_hipaa_identifiers(text_data["full_text"], descriptive_redaction=False) if enforce_hipaa else text_data["full_text"]
             summary_prompt = generate_nurse_summary_prompt(text_for_summary, merged_info)
         elif nurse_style_summary:
             self._log("Using enhanced nurse-style summary generation")
             summary_prompt = generate_nurse_summary_prompt(text_data["full_text"], merged_info)
         elif enforce_hipaa:
             self._log("Using HIPAA-compliant summary generation")
-            text_for_summary = redact_hipaa_identifiers(text_data["full_text"])
+            text_for_summary = redact_hipaa_identifiers(text_data["full_text"], descriptive_redaction=False)
             summary_prompt = generate_hipaa_compliant_prompt(text_for_summary)
         else:
             self._log("Using standard summary generation")
@@ -396,8 +400,9 @@ class GeminiSummarizer(BaseSummarizer):
         if enforce_hipaa:
             hipaa_check = verify_hipaa_compliance(detailed_summary)
             if not hipaa_check["compliant"]:
-                self._log("HIPAA compliance issues detected in summary, applying redaction", level="warning")
-                detailed_summary = redact_hipaa_identifiers(detailed_summary)
+                redaction_type = "descriptive" if descriptive_redaction else "standard"
+                self._log(f"HIPAA compliance issues detected in summary, applying {redaction_type} redaction", level="warning")
+                detailed_summary = redact_hipaa_identifiers(detailed_summary, descriptive_redaction=descriptive_redaction)
                 
         # Create result object
         result = {

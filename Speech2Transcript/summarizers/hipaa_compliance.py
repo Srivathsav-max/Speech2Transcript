@@ -56,21 +56,67 @@ def detect_hipaa_identifiers(text: str) -> Dict[str, List[str]]:
     
     return results
 
-def redact_hipaa_identifiers(text: str, replace_with: str = "[REDACTED]") -> str:
+def redact_hipaa_identifiers(text: str, descriptive_redaction: bool = True) -> str:
     """
     Redact potential HIPAA-protected identifiers in text.
     
     Args:
         text: The text to redact
-        replace_with: Replacement string for redacted content
+        descriptive_redaction: If True, use descriptive replacements instead of generic [REDACTED]
         
     Returns:
         Text with potential identifiers redacted
     """
     redacted_text = text
     
+    # Define descriptive replacements for each category
+    descriptive_replacements = {
+        "names": "[PATIENT_NAME]", 
+        "locations": "[ADDRESS]",
+        "dates": "[DATE]",
+        "phone_numbers": "[PHONE]",
+        "emails": "[EMAIL]",
+        "ids": "[ID_NUMBER]",
+        "mrn": "[MEDICAL_RECORD_NUMBER]"
+    }
+    
+    # Additional clinical terminology to replace with descriptive terms
+    clinical_terms = {
+        r'\bCC\b': "Chief Complaint",
+        r'\bHPI\b': "History of Present Illness",
+        r'\bROS\b': "Review of Systems",
+        r'\bPMH\b': "Past Medical History",
+        r'\bFH\b': "Family History",
+        r'\bSH\b': "Social History",
+        r'\bPE\b': "Physical Examination",
+        r'\bFU\b': "Follow Up",
+        r'\bD/C\b': "Discharge",
+        r'\bDx\b': "Diagnosis",
+        r'\bRx\b': "Prescription",
+        r'\bTx\b': "Treatment",
+        r'\bHx\b': "History",
+        r'\bFx\b': "Fracture"
+    }
+    
+    # First, replace PHI with appropriate descriptive terms
     for category, pattern in HIPAA_IDENTIFIERS.items():
-        redacted_text = re.sub(pattern, replace_with, redacted_text)
+        if descriptive_redaction:
+            replacement = descriptive_replacements.get(category, "[REDACTED]")
+            redacted_text = re.sub(pattern, replacement, redacted_text)
+        else:
+            redacted_text = re.sub(pattern, "[REDACTED]", redacted_text)
+    
+    # Next, replace abbreviated clinical terms with full terms if they appear redacted
+    if descriptive_redaction:
+        for abbrev, full_term in clinical_terms.items():
+            # Look for the pattern [REDACTED] near clinical abbreviations
+            redacted_pattern = r'\[REDACTED\]\s*' + abbrev
+            replacement = f"{full_term}"
+            redacted_text = re.sub(redacted_pattern, replacement, redacted_text)
+            
+            # Also check for abbreviation followed by [REDACTED]
+            abbrev_redacted_pattern = abbrev + r'\s*\[REDACTED\]'
+            redacted_text = re.sub(abbrev_redacted_pattern, replacement, redacted_text)
     
     return redacted_text
 

@@ -80,6 +80,8 @@ def main():
     summarizer_group.add_argument("--force-process", action="store_true", help="Force processing even if content is not telemedical")
     summarizer_group.add_argument("--disable-hipaa", action="store_true", help="Disable HIPAA compliance features")
     summarizer_group.add_argument("--disable-nurse-style", action="store_true", help="Disable enhanced nurse-style summaries")
+    summarizer_group.add_argument("--descriptive-redaction", action="store_true", dest="descriptive_redaction", default=True, help="Use descriptive placeholders for redacted information")
+    summarizer_group.add_argument("--no-descriptive-redaction", action="store_false", dest="descriptive_redaction", help="Use generic [REDACTED] placeholders instead of descriptive ones")
 
     args = parser.parse_args()
 
@@ -117,6 +119,7 @@ def main():
                 # Set HIPAA and nurse-style parameters
                 enforce_hipaa = not args.disable_hipaa
                 nurse_style_summary = not args.disable_nurse_style
+                descriptive_redaction = args.descriptive_redaction
                 
                 result = summarizer.process_transcript(
                     transcript_path=transcript_file,
@@ -125,7 +128,8 @@ def main():
                     speaker_column="speaker",
                     force_process=args.force_process,
                     enforce_hipaa=enforce_hipaa,
-                    nurse_style_summary=nurse_style_summary
+                    nurse_style_summary=nurse_style_summary,
+                    descriptive_redaction=descriptive_redaction
                 )
 
                 log.info("=" * 60)

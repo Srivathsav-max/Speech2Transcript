@@ -56,10 +56,11 @@ The system offers several approaches to transcript summarization:
 
 ### HIPAA Compliance Features
 - **Protected Health Information (PHI) Detection**: Automatically detects and redacts PHI in transcripts
-- **De-identification**: Replaces identifiable information with generic placeholders
+- **Descriptive De-identification**: Replaces identifiable information with contextual placeholders (e.g., [PATIENT_NAME], [DATE], [PHONE])
 - **Compliance Verification**: Ensures summaries adhere to HIPAA requirements
 - **Minimal Necessary Information**: Extracts only clinically relevant details
 - **Secure Output**: Generates HIPAA-compliant medical documentation
+- **Configurable Redaction**: Choose between descriptive or generic redaction based on needs
 
 ### Enhanced Nurse-Style Documentation
 - **SOAP Format**: Structures summaries in Subjective, Objective, Assessment, Plan format
@@ -227,6 +228,12 @@ python -m Speech2Transcript.main --summarize --disable-nurse-style --transcript_
 
 # Generate a summary without HIPAA compliance features
 python -m Speech2Transcript.main --summarize --disable-hipaa --transcript_file /path/to/transcript.json --output ./outputs
+
+# Use descriptive redaction for PHI (on by default)
+python -m Speech2Transcript.main --summarize --descriptive-redaction --transcript_file /path/to/transcript.json --output ./outputs
+
+# Disable descriptive redaction (use generic [REDACTED] placeholders)
+python -m Speech2Transcript.main --summarize --no-descriptive-redaction --transcript_file /path/to/transcript.json --output ./outputs
 
 # Alternatively, set the GOOGLE_API_KEY environment variable
 export GOOGLE_API_KEY=your_api_key_here
