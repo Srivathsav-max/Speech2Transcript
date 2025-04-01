@@ -26,23 +26,13 @@ logger = logging.getLogger(__name__)
 app = Flask(__name__, static_folder='outputs')
 CORS(app, resources={
     r"/*": {  # Allow CORS for all routes
-        "origins": "*",  # Frontend URL
+        "origins": ["http://localhost:3000", "http://localhost:5173", "https://watchrx.srivathsav.me"],  # Frontend URLs
         "methods": ["GET", "POST", "OPTIONS"],
         "allow_headers": ["Content-Type", "Authorization", "Accept"],
         "expose_headers": ["Content-Type", "Content-Disposition"],
-        "supports_credentials": True,
-        "send_wildcard": False
+        "supports_credentials": True
     }
 })
-
-# Enable CORS preflight for all routes
-@app.before_request
-def handle_preflight():
-    if request.method == "OPTIONS":
-        response = app.make_default_options_response()
-        response.headers["Access-Control-Allow-Origin"] = "http://localhost:3000"
-        response.headers["Access-Control-Allow-Credentials"] = "true"
-        return response
 
 # Configure error handling
 @app.errorhandler(400)
@@ -238,7 +228,7 @@ def health_check():
     """Health check endpoint"""
     return jsonify({"status": "healthy"})
 
-@app.route('/api/regenerate', methods=['POST'])
+@app.route('/api/regenerate-summary', methods=['POST'])
 def regenerate_summary():
     """Regenerate summary for an existing processed transcript"""
     logger.info("Received regenerate summary request")
