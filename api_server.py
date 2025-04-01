@@ -194,7 +194,7 @@ def process_audio():
                         "segments": diarization_results.to_dict('records')
                     }
                     
-                    summary_result = summarizer.process_transcript(
+                    summary_result = gemini_summarizer.process_transcript(
                         transcript_data=transcript_data,
                         text_column="transcription",
                         speaker_column="speaker"
