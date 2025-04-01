@@ -28,7 +28,6 @@ ENV/
 # Data
 uploads/
 outputs/
-audios/*
 !audios/.gitkeep
 
 # IDE
