@@ -34,24 +34,6 @@ CORS(app, resources={
     }
 })
 
-# Enable CORS preflight for all routes
-@app.before_request
-def handle_preflight():
-    if request.method == "OPTIONS":
-        response = app.make_default_options_response()
-        response.headers["Access-Control-Allow-Origin"] = "*"
-        response.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
-        response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization, Accept"
-        response.headers["Access-Control-Allow-Credentials"] = "true"
-        return response
-
-@app.after_request
-def after_request(response):
-    response.headers.add("Access-Control-Allow-Origin", "*")
-    response.headers.add("Access-Control-Allow-Headers", "Content-Type, Authorization, Accept")
-    response.headers.add("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
-    return response
-
 # Configure error handling
 @app.errorhandler(400)
 def bad_request(e):
