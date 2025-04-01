@@ -7,7 +7,7 @@ from werkzeug.utils import secure_filename
 # Import the Speech2Transcript components
 from Speech2Transcript.diarization import DiarizationPipeline
 from Speech2Transcript.transcription import TranscriptionPipeline
-from Speech2Transcript.summarizers import GeminiSummarizer, detect_telemedical_content, analyze_conversation
+from Speech2Transcript.summarizers import EnterpriseSummarizer
 
 from Speech2Transcript.utils import get_device
 
@@ -86,12 +86,14 @@ transcription_pipeline = TranscriptionPipeline(
     language="en"
 )
 
-logger.info("Initializing Gemini summarizer")
-gemini_summarizer = GeminiSummarizer(
+logger.info("Initializing Enterprise summarizer")
+summarizer = EnterpriseSummarizer(
     api_key=os.getenv("GOOGLE_API_KEY"),
     model_name="gemini-2.0-flash",
-    temperature=0.1,
-    max_output_tokens=2048
+    temperature=0.2,
+    max_output_tokens=4096,
+    enforce_hipaa=True,
+    clinical_format=True
 )
 
 logger.info("All pipelines initialized successfully")
@@ -190,7 +192,7 @@ def process_audio():
                     }
 
                     # Pass force_process parameter to the summarizer
-                    summary_result = gemini_summarizer.process_transcript(
+                    summary_result = summarizer.process_transcript(
                         transcript_data=transcript_data,
                         text_column="transcription",
                         speaker_column="speaker",
@@ -284,16 +286,16 @@ def regenerate_summary():
             logger.info("Force processing enabled - will process even if not telemedical")
 
         # Update Gemini parameters if provided
-        if temperature != gemini_summarizer.temperature:
+        if temperature != summarizer.temperature:
             logger.info(f"Using custom temperature: {temperature}")
-            gemini_summarizer.temperature = temperature
+            summarizer.temperature = temperature
 
-        if max_output_tokens != gemini_summarizer.max_output_tokens:
+        if max_output_tokens != summarizer.max_output_tokens:
             logger.info(f"Using custom max_output_tokens: {max_output_tokens}")
-            gemini_summarizer.max_output_tokens = max_output_tokens
+            summarizer.max_output_tokens = max_output_tokens
 
         # Generate new summary with force_process parameter
-        summary_result = gemini_summarizer.process_transcript(
+        summary_result = summarizer.process_transcript(
             transcript_data=transcript_data,
             text_column=text_column,
             speaker_column=speaker_column,
