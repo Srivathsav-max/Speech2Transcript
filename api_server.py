@@ -238,6 +238,78 @@ def health_check():
     """Health check endpoint"""
     return jsonify({"status": "healthy"})
 
+@app.route('/api/regenerate', methods=['POST'])
+def regenerate_summary():
+    """Regenerate summary for an existing processed transcript"""
+    logger.info("Received regenerate summary request")
+    
+    # Check if the request has the required data
+    if not request.json:
+        logger.error("No JSON data in request")
+        return jsonify({'error': 'No JSON data provided in request'}), 400
+        
+    # Extract data from request
+    data = request.json
+    
+    # Validate required fields
+    if 'transcription' not in data:
+        logger.error("No transcription data provided")
+        return jsonify({'error': 'No transcription data provided'}), 400
+        
+    # Check if transcription segments exist
+    if 'segments' not in data['transcription']:
+        logger.error("No segments in transcription data")
+        return jsonify({'error': 'No segments in transcription data'}), 400
+        
+    try:
+        logger.info("Starting regeneration of summary...")
+        
+        # Create transcript data for summarizer
+        transcript_data = {
+            "segments": data['transcription']['segments']
+        }
+        
+        # Optional parameters
+        text_column = data.get('text_column', 'transcription')
+        speaker_column = data.get('speaker_column', 'speaker')
+        
+        # Optional Gemini parameters with defaults from the original implementation
+        temperature = data.get('temperature', 0.1)
+        max_output_tokens = data.get('max_output_tokens', 2048)
+        
+        # Update Gemini parameters if provided
+        if temperature != gemini_summarizer.temperature:
+            logger.info(f"Using custom temperature: {temperature}")
+            gemini_summarizer.temperature = temperature
+            
+        if max_output_tokens != gemini_summarizer.max_output_tokens:
+            logger.info(f"Using custom max_output_tokens: {max_output_tokens}")
+            gemini_summarizer.max_output_tokens = max_output_tokens
+        
+        # Generate new summary
+        summary_result = gemini_summarizer.process_transcript(
+            transcript_data=transcript_data,
+            text_column=text_column,
+            speaker_column=speaker_column
+        )
+        
+        # Return regenerated summary
+        return jsonify({
+            "status": "success", 
+            "outputs": {
+                "summary": {
+                    "summary": summary_result["summary"],
+                    "extracted_info": summary_result["extracted_info"]
+                }
+            }
+        })
+        
+    except Exception as e:
+        logger.error(f"Error regenerating summary: {str(e)}")
+        import traceback
+        logger.error(traceback.format_exc())
+        return jsonify({"status": "error", "error": str(e)}), 500
+
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5512))
     app.run(host='0.0.0.0', port=port, debug=True)
