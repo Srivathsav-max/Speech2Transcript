@@ -19,23 +19,10 @@ from .enterprise_summarizer import EnterpriseSummarizer
 from .clinical_narrative import ClinicalNarrativeGenerator
 from .smart_hipaa import SmartHIPAAProcessor
 
-# Import Gemini-powered summarizer (legacy)
-from .gemini_summarizer import GeminiSummarizer
-
-# Import telemedical detection utilities
-from .telemedical_detector import (
-    detect_telemedical_content,
-    analyze_conversation,
-    get_non_telemedical_message
-)
 
 __all__ = [
     'BaseSummarizer',
     'EnterpriseSummarizer',
-    'GeminiSummarizer', 
     'ClinicalNarrativeGenerator',
     'SmartHIPAAProcessor',
-    'detect_telemedical_content',
-    'analyze_conversation',
-    'get_non_telemedical_message'
 ]
