@@ -7,7 +7,7 @@ from diarization import DiarizationPipeline
 from transcription import TranscriptionPipeline
 from realtimestt import RealTimeSTT
 
-from summarizers import GeminiSummarizer
+from summarizers import EnterpriseSummarizer, GeminiSummarizer
 
 from utils import export_to_rttm, export_to_json, merge_speakers, get_device, audio_devices
 
@@ -75,13 +75,16 @@ def main():
     summarizer_group.add_argument("--summary-output", default="summary", help="Output filename for the summary (without extension)")
     summarizer_group.add_argument("--gemini-api-key", type=str, help="API key for Google Gemini (defaults to GOOGLE_API_KEY environment variable)")
     summarizer_group.add_argument("--gemini-model", default="gemini-2.0-flash", help="Gemini model to use for summarization")
-    summarizer_group.add_argument("--temperature", type=float, default=0.4, help="Temperature setting for Gemini model (lower = more deterministic)")
+    summarizer_group.add_argument("--temperature", type=float, default=0.2, help="Temperature setting for Gemini model (lower = more deterministic)")
     summarizer_group.add_argument("--max-tokens", type=int, default=4000, help="Maximum output tokens for Gemini generation")
     summarizer_group.add_argument("--force-process", action="store_true", help="Force processing even if content is not telemedical")
+    
+    # Enterprise summarizer options
+    summarizer_group.add_argument("--use-legacy", action="store_true", help="Use legacy summarizer instead of enterprise version")
     summarizer_group.add_argument("--disable-hipaa", action="store_true", help="Disable HIPAA compliance features")
-    summarizer_group.add_argument("--disable-nurse-style", action="store_true", help="Disable enhanced nurse-style summaries")
-    summarizer_group.add_argument("--descriptive-redaction", action="store_true", dest="descriptive_redaction", default=True, help="Use descriptive placeholders for redacted information")
-    summarizer_group.add_argument("--no-descriptive-redaction", action="store_false", dest="descriptive_redaction", help="Use generic [REDACTED] placeholders instead of descriptive ones")
+    summarizer_group.add_argument("--disable-clinical-format", action="store_true", help="Disable professional clinical formatting")
+    summarizer_group.add_argument("--narrative-only", action="store_true", help="Generate only the narrative summary without SOAP structure")
+    summarizer_group.add_argument("--custom-prompt", type=str, help="Provide a custom prompt for the LLM")
 
     args = parser.parse_args()
 
@@ -104,71 +107,107 @@ def main():
             summary_basename = args.summary_output if args.summary_output != "summary" else basename
 
             try:
-                # Initialize Gemini summarizer
-                log.info("Initializing Gemini-powered summarizer")
-                summarizer = GeminiSummarizer(
-                    api_key=args.gemini_api_key,
-                    model_name=args.gemini_model,
-                    logger=log,
-                    temperature=args.temperature,
-                    max_output_tokens=args.max_tokens
-                )
-                output_path = os.path.join(args.output, f"{summary_basename}_gemini_summary.json")
-
-                log.info(f"Processing transcript with Gemini model: {args.gemini_model}")
-                # Set HIPAA and nurse-style parameters
-                enforce_hipaa = not args.disable_hipaa
-                nurse_style_summary = not args.disable_nurse_style
-                descriptive_redaction = args.descriptive_redaction
+                output_path = os.path.join(args.output, f"{summary_basename}_summary.json")
                 
-                result = summarizer.process_transcript(
-                    transcript_path=transcript_file,
-                    output_path=output_path,
-                    text_column="transcription",
-                    speaker_column="speaker",
-                    force_process=args.force_process,
-                    enforce_hipaa=enforce_hipaa,
-                    nurse_style_summary=nurse_style_summary,
-                    descriptive_redaction=descriptive_redaction
-                )
+                # Determine which summarizer to use
+                if args.use_legacy:
+                    log.info("Using legacy Gemini summarizer")
+                    summarizer = GeminiSummarizer(
+                        api_key=args.gemini_api_key,
+                        model_name=args.gemini_model,
+                        logger=log,
+                        temperature=args.temperature,
+                        max_output_tokens=args.max_tokens
+                    )
+                    
+                    # Set parameters for legacy summarizer
+                    enforce_hipaa = not args.disable_hipaa
+                    
+                    log.info(f"Processing transcript with Gemini model: {args.gemini_model}")
+                    result = summarizer.process_transcript(
+                        transcript_path=transcript_file,
+                        output_path=output_path,
+                        text_column="transcription",
+                        speaker_column="speaker",
+                        force_process=args.force_process,
+                        enforce_hipaa=enforce_hipaa
+                    )
+                else:
+                    log.info("Using enterprise-grade summarizer")
+                    # Initialize enterprise summarizer
+                    enterprise_summarizer = EnterpriseSummarizer(
+                        api_key=args.gemini_api_key,
+                        model_name=args.gemini_model,
+                        logger=log,
+                        temperature=args.temperature,
+                        max_output_tokens=args.max_tokens,
+                        enforce_hipaa=not args.disable_hipaa,
+                        clinical_format=not args.disable_clinical_format
+                    )
+                    
+                    # Process transcript with enterprise summarizer
+                    extra_options = {}
+                    if args.custom_prompt:
+                        extra_options["custom_prompt"] = args.custom_prompt
+                        
+                    if args.narrative_only:
+                        extra_options["narrative_only"] = True
+                    
+                    log.info(f"Processing transcript with enterprise summarizer using model: {args.gemini_model}")
+                    result = enterprise_summarizer.process_transcript(
+                        transcript_path=transcript_file,
+                        output_path=output_path,
+                        text_column="transcription",
+                        speaker_column="speaker",
+                        force_process=args.force_process,
+                        **extra_options
+                    )
 
                 log.info("=" * 60)
                 
-                # Show appropriate title based on summary type
-                if not args.disable_nurse_style:
-                    log.info("CLINICAL NURSING DOCUMENTATION:")
-                else:
-                    log.info("Gemini-Generated Summary:")
-                
-                log.info("=" * 60)
-                
-                # Display SOAP format if available
-                if "soap_format" in result and result["soap_format"]:
-                    soap = result["soap_format"]
-                    if soap["subjective"]:
-                        log.info("SUBJECTIVE:")
-                        log.info(soap["subjective"])
-                        log.info("")
-                    
-                    if soap["objective"]:
-                        log.info("OBJECTIVE:")
-                        log.info(soap["objective"])
-                        log.info("")
-                    
-                    if soap["assessment"]:
-                        log.info("ASSESSMENT:")
-                        log.info(soap["assessment"])
-                        log.info("")
-                    
-                    if soap["plan"]:
-                        log.info("PLAN:")
-                        log.info(soap["plan"])
-                else:
-                    # Show standard summary
+                # Determine what to display based on summarizer used
+                if args.use_legacy:
+                    # Legacy summarizer
+                    log.info("GEMINI-GENERATED SUMMARY:")
+                    log.info("=" * 60)
                     log.info(result["summary"])
+                else:
+                    # Enterprise summarizer
+                    log.info("CLINICAL DOCUMENTATION:")
+                    log.info("=" * 60)
+                    
+                    # Display structured sections if available
+                    if "sections" in result and not args.narrative_only:
+                        sections = result["sections"]
+                        if sections.get("subjective"):
+                            log.info("SUBJECTIVE:")
+                            log.info(sections["subjective"])
+                            log.info("")
+                        
+                        if sections.get("objective"):
+                            log.info("OBJECTIVE:")
+                            log.info(sections["objective"])
+                            log.info("")
+                        
+                        if sections.get("assessment"):
+                            log.info("ASSESSMENT:")
+                            log.info(sections["assessment"])
+                            log.info("")
+                        
+                        if sections.get("plan"):
+                            log.info("PLAN:")
+                            log.info(sections["plan"])
+                            log.info("")
+                    else:
+                        # Show narrative summary
+                        log.info("CLINICAL NARRATIVE:")
+                        log.info(result["summary"])
                 
                 # Show HIPAA compliance status
                 if "hipaa_compliant" in result and result["hipaa_compliant"]:
+                    log.info("-" * 60)
+                    log.info("HIPAA compliance features: Enabled")
+                elif not args.disable_hipaa:
                     log.info("-" * 60)
                     log.info("HIPAA compliance features: Enabled")
                 

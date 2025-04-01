@@ -62,12 +62,15 @@ The system offers several approaches to transcript summarization:
 - **Secure Output**: Generates HIPAA-compliant medical documentation
 - **Configurable Redaction**: Choose between descriptive or generic redaction based on needs
 
-### Enhanced Nurse-Style Documentation
-- **SOAP Format**: Structures summaries in Subjective, Objective, Assessment, Plan format
-- **Professional Clinical Terminology**: Uses proper medical abbreviations and phrasing
-- **Comprehensive Assessment**: Detailed evaluation organized by body systems
-- **Clear Treatment Plans**: Well-structured follow-up instructions and recommendations
-- **Realistic Nursing Narrative**: Documentation that reads as if written by a healthcare professional
+### Enterprise-Grade Clinical Documentation
+- **Professional SOAP Format**: Structures content in standard Subjective, Objective, Assessment, Plan format
+- **Intelligent HIPAA Compliance**: Context-aware PHI detection and redaction that preserves readability
+- **Human-Like Narrative**: Generates natural, professionally formatted clinical notes
+- **Smart Context Recognition**: Maintains clinical terminology while protecting patient privacy
+- **Comprehensive Medical Information**: Extracts and organizes all relevant clinical data
+- **Minimal Overredaction**: Preserves clinical meaning while removing personal identifiers
+- **Structured and Narrative Options**: Choose between detailed SOAP structure or concise narrative
+- **Customizable Output**: Configure level of detail and formatting to match specific needs
 
 ## Installation
 
@@ -217,23 +220,20 @@ python -m Speech2Transcript.main --summarize --transcript_file /path/to/transcri
 # Generate a detailed comprehensive summary with structured information
 python -m Speech2Transcript.main --summarize --detailed --transcript_file /path/to/transcript.json --output ./outputs
 
-# Generate a narrative summary using Gemini API (requires API key)
-python -m Speech2Transcript.main --summarize --gemini-api-key YOUR_API_KEY --transcript_file /path/to/transcript.json --output ./outputs
-
-# Generate a nurse-like clinical summary with HIPAA compliance
+# Generate an enterprise-grade clinical summary (default)
 python -m Speech2Transcript.main --summarize --transcript_file /path/to/transcript.json --output ./outputs
 
-# Generate a standard summary without nurse formatting
-python -m Speech2Transcript.main --summarize --disable-nurse-style --transcript_file /path/to/transcript.json --output ./outputs
+# Generate a narrative-only clinical summary without SOAP structure
+python -m Speech2Transcript.main --summarize --narrative-only --transcript_file /path/to/transcript.json --output ./outputs
 
-# Generate a summary without HIPAA compliance features
+# Generate a clinical summary without HIPAA compliance
 python -m Speech2Transcript.main --summarize --disable-hipaa --transcript_file /path/to/transcript.json --output ./outputs
 
-# Use descriptive redaction for PHI (on by default)
-python -m Speech2Transcript.main --summarize --descriptive-redaction --transcript_file /path/to/transcript.json --output ./outputs
+# Use legacy summarizer instead of enterprise version
+python -m Speech2Transcript.main --summarize --use-legacy --transcript_file /path/to/transcript.json --output ./outputs
 
-# Disable descriptive redaction (use generic [REDACTED] placeholders)
-python -m Speech2Transcript.main --summarize --no-descriptive-redaction --transcript_file /path/to/transcript.json --output ./outputs
+# Provide a custom prompt for the enterprise summarizer
+python -m Speech2Transcript.main --summarize --custom-prompt "Your prompt here" --transcript_file /path/to/transcript.json --output ./outputs
 
 # Alternatively, set the GOOGLE_API_KEY environment variable
 export GOOGLE_API_KEY=your_api_key_here

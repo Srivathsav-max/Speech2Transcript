@@ -4,14 +4,22 @@ from speech-to-text transcriptions and generating detailed summaries.
 
 This package provides:
 - BaseSummarizer: Abstract base class for all summarizers
-- GeminiSummarizer: Enterprise-grade LLM-powered summarizer using Google's Gemini API
+- EnterpriseSummarizer: Enterprise-grade, HIPAA-compliant medical summarizer
+- GeminiSummarizer: LLM-powered summarizer using Google's Gemini API
+- SmartHIPAAProcessor: Advanced HIPAA compliance with intelligent redaction
+- ClinicalNarrativeGenerator: Professional medical documentation generator
 - TelemedicalDetector: Utilities for identifying healthcare-related content
 """
 
 # Base class
 from .base_summarizer import BaseSummarizer
 
-# Import Gemini-powered summarizer
+# Import enterprise summarizer components
+from .enterprise_summarizer import EnterpriseSummarizer
+from .clinical_narrative import ClinicalNarrativeGenerator
+from .smart_hipaa import SmartHIPAAProcessor
+
+# Import Gemini-powered summarizer (legacy)
 from .gemini_summarizer import GeminiSummarizer
 
 # Import telemedical detection utilities
@@ -23,7 +31,10 @@ from .telemedical_detector import (
 
 __all__ = [
     'BaseSummarizer',
-    'GeminiSummarizer',
+    'EnterpriseSummarizer',
+    'GeminiSummarizer', 
+    'ClinicalNarrativeGenerator',
+    'SmartHIPAAProcessor',
     'detect_telemedical_content',
     'analyze_conversation',
     'get_non_telemedical_message'
