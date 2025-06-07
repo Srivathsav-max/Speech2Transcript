@@ -147,6 +147,40 @@ def process_audio():
             logger.info(f"Processing file: {filename}")
             result = {"status": "success", "filename": filename, "outputs": {}}
 
+            # Validate audio file before processing
+            try:
+                # Try soundfile first (more reliable for format detection)
+                try:
+                    import soundfile as sf
+                    info = sf.info(filepath)
+                    duration = info.duration
+                    sample_rate = info.samplerate
+                    channels = info.channels
+                    frames = info.frames
+                except ImportError:
+                    # Fallback to pydub if soundfile not available
+                    from pydub import AudioSegment
+                    audio = AudioSegment.from_file(filepath)
+                    duration = len(audio) / 1000.0  # Convert ms to seconds
+                    sample_rate = audio.frame_rate
+                    channels = audio.channels
+                    frames = len(audio.raw_data) // (audio.sample_width * channels)
+
+                logger.info(f"Audio file info: {frames} frames, {sample_rate} Hz, {channels} channels, {duration:.2f}s")
+
+                # Check if file is too short
+                if duration < 0.1:
+                    logger.warning(f"Audio file is very short ({duration:.2f}s), may not produce good results")
+                elif duration < 1.0:
+                    logger.warning(f"Audio file is short ({duration:.2f}s), diarization may be less accurate")
+
+            except Exception as audio_error:
+                logger.error(f"Invalid audio file format: {audio_error}")
+                return jsonify({
+                    "status": "error",
+                    "error": f"Invalid audio file format: {str(audio_error)}. Please ensure the file is a valid audio file (WAV, MP3, etc.)"
+                }), 400
+
             # Run diarization if requested
             if params['diarize']:
                 logger.info("Starting diarization...")
@@ -156,58 +190,88 @@ def process_audio():
                 )
 
                 # Convert diarization results to dictionary
-                diarization_data = {
-                    "num_speakers": diarization_results["speaker"].nunique(),
-                    "duration": float(diarization_results["end"].max()),
-                    "segments": diarization_results.to_dict('records')
-                }
+                # Handle empty diarization results
+                if len(diarization_results) == 0:
+                    diarization_data = {
+                        "num_speakers": 0,
+                        "duration": 0.0,
+                        "segments": []
+                    }
+                    logger.warning("No speech segments detected in audio file")
+                else:
+                    diarization_data = {
+                        "num_speakers": diarization_results["speaker"].nunique(),
+                        "duration": float(diarization_results["end"].max()),
+                        "segments": diarization_results.to_dict('records')
+                    }
 
                 result["outputs"]["diarization"] = diarization_data
 
                 # Run transcription if requested
                 if params['transcribe']:
-                    logger.info("Starting transcription...")
+                    if len(diarization_results) == 0:
+                        logger.warning("Cannot transcribe: no speech segments found in diarization")
+                        result["outputs"]["transcription"] = {
+                            "segments": []
+                        }
+                    else:
+                        logger.info("Starting transcription...")
 
-                    transcription_results = transcription_pipeline.process_diarization(
-                        diarization_results,
-                        filepath,
-                        min_segment_length=0.5,
-                        temp_dir=os.path.join(app.config['OUTPUT_FOLDER'], "temp")
-                    )
+                        transcription_results = transcription_pipeline.process_diarization(
+                            diarization_results,
+                            filepath,
+                            min_segment_length=0.5,
+                            temp_dir=os.path.join(app.config['OUTPUT_FOLDER'], "temp")
+                        )
 
-                    # Update the diarization results with transcriptions
-                    diarization_results = transcription_results
+                        # Update the diarization results with transcriptions
+                        diarization_results = transcription_results
 
-                    result["outputs"]["transcription"] = {
-                        "segments": diarization_results.to_dict('records')
-                    }
+                        result["outputs"]["transcription"] = {
+                            "segments": diarization_results.to_dict('records')
+                        }
 
                 # Run summarization if requested
                 if params['summarize'] and params['transcribe']:
-                    logger.info("Starting summarization with Gemini...")
+                    if len(diarization_results) == 0:
+                        logger.warning("Cannot summarize: no transcribed segments available")
+                        result["outputs"]["summary"] = {
+                            "summary": "No speech content detected in the audio file for summarization.",
+                            "extracted_info": {
+                                "is_telemedical": False,
+                                "patient_name": "Unknown",
+                                "provider_name": "Unknown",
+                                "conditions": [],
+                                "medications": [],
+                                "vital_signs": {}
+                            }
+                        }
+                        result["is_telemedical"] = False
+                    else:
+                        logger.info("Starting summarization with Gemini...")
 
-                    # Create transcript data for summarizer
-                    transcript_data = {
-                        "segments": diarization_results.to_dict('records')
-                    }
+                        # Create transcript data for summarizer
+                        transcript_data = {
+                            "segments": diarization_results.to_dict('records')
+                        }
 
-                    # Pass force_process parameter to the summarizer
-                    summary_result = summarizer.process_transcript(
-                        transcript_data=transcript_data,
-                        text_column="transcription",
-                        speaker_column="speaker",
-                        force_process=params['force_process']
-                    )
+                        # Pass force_process parameter to the summarizer
+                        summary_result = summarizer.process_transcript(
+                            transcript_data=transcript_data,
+                            text_column="transcription",
+                            speaker_column="speaker",
+                            force_process=params['force_process']
+                        )
 
-                    # Add summary to response
-                    result["outputs"]["summary"] = {
-                        "summary": summary_result["summary"],
-                        "extracted_info": summary_result["extracted_info"]
-                    }
-                    
-                    # Add telemedical flag to the top level for easy access
-                    if "is_telemedical" in summary_result["extracted_info"]:
-                        result["is_telemedical"] = summary_result["extracted_info"]["is_telemedical"]
+                        # Add summary to response
+                        result["outputs"]["summary"] = {
+                            "summary": summary_result["summary"],
+                            "extracted_info": summary_result["extracted_info"]
+                        }
+
+                        # Add telemedical flag to the top level for easy access
+                        if "is_telemedical" in summary_result["extracted_info"]:
+                            result["is_telemedical"] = summary_result["extracted_info"]["is_telemedical"]
 
             return jsonify(result)
 

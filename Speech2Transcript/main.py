@@ -7,7 +7,7 @@ from diarization import DiarizationPipeline
 from transcription import TranscriptionPipeline
 from realtimestt import RealTimeSTT
 
-from summarizers import EnterpriseSummarizer, GeminiSummarizer
+from summarizers import EnterpriseSummarizer
 
 from utils import export_to_rttm, export_to_json, merge_speakers, get_device, audio_devices
 
@@ -80,7 +80,6 @@ def main():
     summarizer_group.add_argument("--force-process", action="store_true", help="Force processing even if content is not telemedical")
     
     # Enterprise summarizer options
-    summarizer_group.add_argument("--use-legacy", action="store_true", help="Use legacy summarizer instead of enterprise version")
     summarizer_group.add_argument("--disable-hipaa", action="store_true", help="Disable HIPAA compliance features")
     summarizer_group.add_argument("--disable-clinical-format", action="store_true", help="Disable professional clinical formatting")
     summarizer_group.add_argument("--narrative-only", action="store_true", help="Generate only the narrative summary without SOAP structure")
@@ -108,100 +107,69 @@ def main():
 
             try:
                 output_path = os.path.join(args.output, f"{summary_basename}_summary.json")
-                
-                # Determine which summarizer to use
-                if args.use_legacy:
-                    log.info("Using legacy Gemini summarizer")
-                    summarizer = GeminiSummarizer(
-                        api_key=args.gemini_api_key,
-                        model_name=args.gemini_model,
-                        logger=log,
-                        temperature=args.temperature,
-                        max_output_tokens=args.max_tokens
-                    )
-                    
-                    # Set parameters for legacy summarizer
-                    enforce_hipaa = not args.disable_hipaa
-                    
-                    log.info(f"Processing transcript with Gemini model: {args.gemini_model}")
-                    result = summarizer.process_transcript(
-                        transcript_path=transcript_file,
-                        output_path=output_path,
-                        text_column="transcription",
-                        speaker_column="speaker",
-                        force_process=args.force_process,
-                        enforce_hipaa=enforce_hipaa
-                    )
-                else:
-                    log.info("Using enterprise-grade summarizer")
-                    # Initialize enterprise summarizer
-                    enterprise_summarizer = EnterpriseSummarizer(
-                        api_key=args.gemini_api_key,
-                        model_name=args.gemini_model,
-                        logger=log,
-                        temperature=args.temperature,
-                        max_output_tokens=args.max_tokens,
-                        enforce_hipaa=not args.disable_hipaa,
-                        clinical_format=not args.disable_clinical_format
-                    )
-                    
-                    # Process transcript with enterprise summarizer
-                    extra_options = {}
-                    if args.custom_prompt:
-                        extra_options["custom_prompt"] = args.custom_prompt
-                        
-                    if args.narrative_only:
-                        extra_options["narrative_only"] = True
-                    
-                    log.info(f"Processing transcript with enterprise summarizer using model: {args.gemini_model}")
-                    result = enterprise_summarizer.process_transcript(
-                        transcript_path=transcript_file,
-                        output_path=output_path,
-                        text_column="transcription",
-                        speaker_column="speaker",
-                        force_process=args.force_process,
-                        **extra_options
-                    )
+
+                log.info("Using enterprise-grade summarizer")
+                # Initialize enterprise summarizer
+                enterprise_summarizer = EnterpriseSummarizer(
+                    api_key=args.gemini_api_key,
+                    model_name=args.gemini_model,
+                    logger=log,
+                    temperature=args.temperature,
+                    max_output_tokens=args.max_tokens,
+                    enforce_hipaa=not args.disable_hipaa,
+                    clinical_format=not args.disable_clinical_format
+                )
+
+                # Process transcript with enterprise summarizer
+                extra_options = {}
+                if args.custom_prompt:
+                    extra_options["custom_prompt"] = args.custom_prompt
+
+                if args.narrative_only:
+                    extra_options["narrative_only"] = True
+
+                log.info(f"Processing transcript with enterprise summarizer using model: {args.gemini_model}")
+                result = enterprise_summarizer.process_transcript(
+                    transcript_path=transcript_file,
+                    output_path=output_path,
+                    text_column="transcription",
+                    speaker_column="speaker",
+                    force_process=args.force_process,
+                    **extra_options
+                )
 
                 log.info("=" * 60)
-                
-                # Determine what to display based on summarizer used
-                if args.use_legacy:
-                    # Legacy summarizer
-                    log.info("GEMINI-GENERATED SUMMARY:")
-                    log.info("=" * 60)
-                    log.info(result["summary"])
+
+                # Display enterprise summarizer results
+                log.info("CLINICAL DOCUMENTATION:")
+                log.info("=" * 60)
+
+                # Display structured sections if available
+                if "sections" in result and not args.narrative_only:
+                    sections = result["sections"]
+                    if sections.get("subjective"):
+                        log.info("SUBJECTIVE:")
+                        log.info(sections["subjective"])
+                        log.info("")
+
+                    if sections.get("objective"):
+                        log.info("OBJECTIVE:")
+                        log.info(sections["objective"])
+                        log.info("")
+
+                    if sections.get("assessment"):
+                        log.info("ASSESSMENT:")
+                        log.info(sections["assessment"])
+                        log.info("")
+
+                    if sections.get("plan"):
+                        log.info("PLAN:")
+                        log.info(sections["plan"])
+                        log.info("")
                 else:
-                    # Enterprise summarizer
-                    log.info("CLINICAL DOCUMENTATION:")
-                    log.info("=" * 60)
-                    
-                    # Display structured sections if available
-                    if "sections" in result and not args.narrative_only:
-                        sections = result["sections"]
-                        if sections.get("subjective"):
-                            log.info("SUBJECTIVE:")
-                            log.info(sections["subjective"])
-                            log.info("")
-                        
-                        if sections.get("objective"):
-                            log.info("OBJECTIVE:")
-                            log.info(sections["objective"])
-                            log.info("")
-                        
-                        if sections.get("assessment"):
-                            log.info("ASSESSMENT:")
-                            log.info(sections["assessment"])
-                            log.info("")
-                        
-                        if sections.get("plan"):
-                            log.info("PLAN:")
-                            log.info(sections["plan"])
-                            log.info("")
-                    else:
-                        # Show narrative summary
-                        log.info("CLINICAL NARRATIVE:")
-                        log.info(result["summary"])
+                    # Show narrative summary
+                    log.info("CLINICAL NARRATIVE:")
+                    log.info(result["summary"])
                 
                 # Show HIPAA compliance status
                 if "hipaa_compliant" in result and result["hipaa_compliant"]:
@@ -369,6 +337,9 @@ def main():
         log.info("Initializing Diarization Pipeline")
         log.info("Using Device: %s", args.device)
 
+        # Initialize diarization_results to None
+        diarization_results = None
+
         if args.diarize:
             diarization = DiarizationPipeline(
                 model_name=args.diarization_model,
@@ -422,27 +393,31 @@ def main():
 
             log.info("Transcription completed")
 
-        formats = [args.format] if args.format != "all" else ["csv", "rttm", "json"]
+        # Only save results if diarization was performed
+        if diarization_results is not None:
+            formats = [args.format] if args.format != "all" else ["csv", "rttm", "json"]
 
-        for fmt in formats:
-            if fmt == "csv":
-                output_path = os.path.join(args.output, f"{basename}_diarization.csv")
-                results_copy = diarization_results.copy()
-                results_copy['segment_str'] = results_copy['segment'].apply(str)
-                results_copy.drop('segment', axis=1).to_csv(output_path, index=False)
-                log.info(f"Saved CSV results to: {output_path}")
+            for fmt in formats:
+                if fmt == "csv":
+                    output_path = os.path.join(args.output, f"{basename}_diarization.csv")
+                    results_copy = diarization_results.copy()
+                    results_copy['segment_str'] = results_copy['segment'].apply(str)
+                    results_copy.drop('segment', axis=1).to_csv(output_path, index=False)
+                    log.info(f"Saved CSV results to: {output_path}")
 
-            elif fmt == "rttm":
-                output_path = os.path.join(args.output, f"{basename}_diarization.rttm")
-                export_to_rttm(diarization_results, output_path, args.audio)
-                log.info(f"Saved RTTM results to: {output_path}")
+                elif fmt == "rttm":
+                    output_path = os.path.join(args.output, f"{basename}_diarization.rttm")
+                    export_to_rttm(diarization_results, output_path, args.audio)
+                    log.info(f"Saved RTTM results to: {output_path}")
 
-            elif fmt == "json":
-                output_path = os.path.join(args.output, f"{basename}_diarization.json")
-                export_to_json(diarization_results, output_path)
-                log.info(f"Saved JSON results to: {output_path}")
+                elif fmt == "json":
+                    output_path = os.path.join(args.output, f"{basename}_diarization.json")
+                    export_to_json(diarization_results, output_path)
+                    log.info(f"Saved JSON results to: {output_path}")
 
-        log.info(f"Processing Finished Successfully")
+            log.info(f"Processing Finished Successfully")
+        else:
+            log.info("No diarization or transcription was performed. Use --diarize and/or --transcribe flags to process audio.")
 
 if __name__ == "__main__":
     main()

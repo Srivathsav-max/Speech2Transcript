@@ -51,8 +51,24 @@ class DiarizationPipeline:
             max_speakers=max_speakers
         )
 
-        segments, labels, speakers = zip(*[(segment, label, speaker) for segment, label, speaker in segment.itertracks(yield_label=True)])
+        # Extract segments from the diarization result
+        segment_data = [(segment, label, speaker) for segment, label, speaker in segment.itertracks(yield_label=True)]
+
+        # Check if any segments were found
+        if not segment_data:
+            # Return empty DataFrame with proper structure if no segments found
+            print("Warning: No speech segments detected in audio. This could be due to:")
+            print("- Audio file is too short or silent")
+            print("- Audio quality is too poor")
+            print("- No speech detected by the diarization model")
+            import pandas as pd
+            empty_df = pd.DataFrame(columns=['segment', 'label', 'speaker', 'start', 'end'])
+            # Add a dummy row to prevent errors in downstream processing
+            # This will be filtered out later if needed
+            return empty_df
+
+        segments, labels, speakers = zip(*segment_data)
 
         diarization_df = segments_to_df(segments, labels, speakers)
-        
+
         return diarization_df
