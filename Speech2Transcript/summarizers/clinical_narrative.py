@@ -1,10 +1,3 @@
-"""
-Clinical Narrative Generator
-
-This module provides an enterprise-grade implementation for generating human-like,
-professionally structured clinical narratives from medical transcripts.
-"""
-
 import re
 from typing import Dict, Any, List, Tuple, Optional, Union
 import logging
@@ -14,11 +7,6 @@ from datetime import datetime
 logger = logging.getLogger(__name__)
 
 class ClinicalNarrativeGenerator:
-    """
-    Enterprise-grade clinical narrative generator that produces human-like,
-    professionally formatted medical documentation.
-    """
-    
     def __init__(self, logger: Optional[logging.Logger] = None):
         """
         Initialize the narrative generator.

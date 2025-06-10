@@ -5,11 +5,8 @@ from flask_cors import CORS
 from werkzeug.utils import secure_filename
 
 # Import the Speech2Transcript components
-from Speech2Transcript.diarization import DiarizationPipeline
 from Speech2Transcript.transcription import TranscriptionPipeline
 from Speech2Transcript.summarizers import EnterpriseSummarizer
-
-from Speech2Transcript.utils import get_device
 
 from dotenv import load_dotenv
 
@@ -67,33 +64,36 @@ app.config['OUTPUT_FOLDER'] = OUTPUT_FOLDER
 # Initialize pipelines at startup
 logger.info("Initializing pipelines at startup...")
 
-device = get_device()
-logger.info(f"Using device: {device}")
-
-logger.info("Initializing diarization pipeline")
-diarization_pipeline = DiarizationPipeline(
-    model_name="pyannote/speaker-diarization-3.1",
-    device=device
-)
-
-logger.info("Initializing transcription pipeline")
+logger.info("Initializing Google Speech-to-Text transcription pipeline")
 transcription_pipeline = TranscriptionPipeline(
-    model_name="large-v3",
-    device=device,
-    compute_type="float16",
-    chunk_length=30,
-    batch_size=8,
-    language="en"
+    model_name="default",  # Not used with Google STT but kept for compatibility
+    device="cpu",  # Not used with Google STT but kept for compatibility
+    compute_type=None,  # Not used with Google STT
+    chunk_length=60,  # Maximum length for Google STT
+    batch_size=1,  # Not used with Google STT but kept for compatibility
+    language="en-US",  # Language code for Google STT
+    beam_size=1  # Not used with Google STT but kept for compatibility
 )
 
 logger.info("Initializing Enterprise summarizer")
+# Get API key from environment variables
+api_key = os.getenv('GEMINI_API_KEY') or os.getenv('GOOGLE_API_KEY')
+logger.info(f"API Key available: {api_key is not None}")
+
+if not api_key:
+    logger.warning("No API key found in environment variables. Please set GEMINI_API_KEY or GOOGLE_API_KEY in your .env file")
+else:
+    logger.info("API key loaded from environment variables")
+
+# Use a more resource-efficient model considering memory constraints (4GB RAM, 2 CPUs)
 summarizer = EnterpriseSummarizer(
-    api_key=os.getenv("GOOGLE_API_KEY"),
-    model_name="gemini-2.0-flash",
+    api_key=api_key,
+    model_name="gemini-1.5-flash",  # Updated to use current model
     temperature=0.2,
-    max_output_tokens=4096,
+    max_output_tokens=2048,  # Reduced from 4096 to save memory
     enforce_hipaa=True,
-    clinical_format=True
+    clinical_format=True,
+    logger=logger  # Pass the logger for better debugging
 )
 
 logger.info("All pipelines initialized successfully")
@@ -135,13 +135,10 @@ def process_audio():
             'force_process': request.form.get('force_process', 'false').lower() == 'true',
             'num_speakers': int(request.form.get('num_speakers', '0')) if request.form.get('num_speakers', '0').isdigit() else None
         }
-        
+
         # Log if we're forcing processing
         if params['force_process']:
             logger.info("Force processing enabled - will process even if not telemedical")
-
-        # Generate a base filename for outputs
-        basename = os.path.splitext(filename)[0]
 
         try:
             logger.info(f"Processing file: {filename}")
@@ -181,58 +178,122 @@ def process_audio():
                     "error": f"Invalid audio file format: {str(audio_error)}. Please ensure the file is a valid audio file (WAV, MP3, etc.)"
                 }), 400
 
-            # Run diarization if requested
-            if params['diarize']:
-                logger.info("Starting diarization...")
-                diarization_results = diarization_pipeline.process_audio(
-                    filepath,
-                    num_speakers=params['num_speakers']
-                )
+            # Run transcription with Google Speech-to-Text (includes diarization)
+            if params['transcribe'] or params['diarize']:
+                logger.info("Starting Google Speech-to-Text with speaker diarization...")
 
-                # Convert diarization results to dictionary
-                # Handle empty diarization results
-                if len(diarization_results) == 0:
-                    diarization_data = {
-                        "num_speakers": 0,
-                        "duration": 0.0,
-                        "segments": []
-                    }
-                    logger.warning("No speech segments detected in audio file")
-                else:
-                    diarization_data = {
-                        "num_speakers": diarization_results["speaker"].nunique(),
-                        "duration": float(diarization_results["end"].max()),
-                        "segments": diarization_results.to_dict('records')
-                    }
+                try:
+                    # Determine speaker count parameters
+                    min_speakers = 2
+                    max_speakers = 6
+                    if params['num_speakers']:
+                        min_speakers = max_speakers = params['num_speakers']
 
-                result["outputs"]["diarization"] = diarization_data
-
-                # Run transcription if requested
-                if params['transcribe']:
-                    if len(diarization_results) == 0:
-                        logger.warning("Cannot transcribe: no speech segments found in diarization")
-                        result["outputs"]["transcription"] = {
-                            "segments": []
-                        }
+                    transcription = transcription_pipeline.transcribe_audio(
+                        filepath,
+                        return_timestamps=True,
+                        enable_speaker_diarization=True,
+                        min_speaker_count=min_speakers,
+                        max_speaker_count=max_speakers
+                    )
+                    
+                    segments = []
+                    if transcription.get("speaker_segments"):
+                        # Process speaker segments
+                        for i, speaker_segment in enumerate(transcription["speaker_segments"]):
+                            segment = {
+                                "segment": i,
+                                "label": "SPEAKER",
+                                "speaker": speaker_segment["speaker"],
+                                "start": speaker_segment["start"],
+                                "end": speaker_segment["end"],
+                                "transcription": speaker_segment["text"],
+                                "language": transcription["language"],
+                                "language_probability": transcription["language_probability"],
+                                "word_timestamps": []
+                            }
+                            segments.append(segment)
                     else:
-                        logger.info("Starting transcription...")
-
-                        transcription_results = transcription_pipeline.process_diarization(
-                            diarization_results,
-                            filepath,
-                            min_segment_length=0.5,
-                            temp_dir=os.path.join(app.config['OUTPUT_FOLDER'], "temp")
-                        )
-
-                        # Update the diarization results with transcriptions
-                        diarization_results = transcription_results
-
-                        result["outputs"]["transcription"] = {
-                            "segments": diarization_results.to_dict('records')
+                        # Fallback to a single segment with the entire transcription
+                        segment = {
+                            "segment": 0,
+                            "label": "SPEAKER",
+                            "speaker": "SPEAKER_0",
+                            "start": 0.0,
+                            "end": 0.0,  # Will be updated with the last word timestamp
+                            "transcription": transcription["text"],
+                            "language": transcription["language"],
+                            "language_probability": transcription["language_probability"],
+                            "word_timestamps": []
                         }
+                        segments.append(segment)
+                    
+                    # Process word timestamps if available
+                    if transcription["chunks"]:
+                        # Group word timestamps by speaker segment
+                        for chunk in transcription["chunks"]:
+                            word_timestamp = {
+                                "word": chunk["text"],
+                                "start": chunk["timestamp"][0],
+                                "end": chunk["timestamp"][1]
+                            }
+                            
+                            # Find the segment this word belongs to
+                            for segment in segments:
+                                if (chunk["speaker"] == segment["speaker"] and 
+                                    chunk["timestamp"][0] >= segment["start"] and 
+                                    chunk["timestamp"][1] <= segment["end"]):
+                                    segment["word_timestamps"].append(word_timestamp)
+                                    break
+                            else:
+                                # If no matching segment found, add to the first segment as fallback
+                                if segments:
+                                    segments[0]["word_timestamps"].append(word_timestamp)
+                        
+                        # Update segment end times if needed
+                        for segment in segments:
+                            if segment["word_timestamps"] and segment["end"] == 0.0:
+                                segment["end"] = segment["word_timestamps"][-1]["end"]
+                    
+                    # Create diarization data structure
+                    diarization_data = {
+                        "segments": segments,
+                        "num_speakers": len(set(s["speaker"] for s in segments)),
+                        "duration": max([s["end"] for s in segments]) if segments else 0.0
+                    }
+                    
+                    # Store results
+                    result["outputs"]["diarization"] = diarization_data
+                    result["outputs"]["transcription"] = {"segments": segments}
+                    
+                    # Create diarization_results for summarization
+                    import pandas as pd
+                    
+                    if segments:
+                        # Create DataFrame for summarization
+                        diarization_results = pd.DataFrame(segments)
 
-                # Run summarization if requested
-                if params['summarize'] and params['transcribe']:
+                        # Store results for both diarization and transcription outputs
+                        result["outputs"]["diarization"] = {
+                            "segments": segments,
+                            "num_speakers": len(set(s["speaker"] for s in segments)),
+                            "duration": max([s["end"] for s in segments]) if segments else 0.0
+                        }
+                        result["outputs"]["transcription"] = {"segments": segments}
+                    else:
+                        logger.warning("No transcription returned from Google Speech-to-Text")
+                        result["outputs"]["diarization"] = {"segments": [], "num_speakers": 0, "duration": 0.0}
+                        result["outputs"]["transcription"] = {"segments": []}
+                        diarization_results = pd.DataFrame()
+                        
+                except Exception as e:
+                    logger.error(f"Error in transcription: {str(e)}")
+                    result["outputs"]["diarization"] = {"segments": [], "num_speakers": 0, "duration": 0.0}
+                    result["outputs"]["transcription"] = {"segments": []}
+                    diarization_results = pd.DataFrame()
+
+                # Run summarization if requested (requires transcription data)
+                if params['summarize'] and (params['transcribe'] or params['diarize']):
                     if len(diarization_results) == 0:
                         logger.warning("Cannot summarize: no transcribed segments available")
                         result["outputs"]["summary"] = {
@@ -254,8 +315,8 @@ def process_audio():
                         transcript_data = {
                             "segments": diarization_results.to_dict('records')
                         }
-
-                        # Pass force_process parameter to the summarizer
+                        
+                        # Process the transcript with the summarizer
                         summary_result = summarizer.process_transcript(
                             transcript_data=transcript_data,
                             text_column="transcription",
@@ -272,6 +333,10 @@ def process_audio():
                         # Add telemedical flag to the top level for easy access
                         if "is_telemedical" in summary_result["extracted_info"]:
                             result["is_telemedical"] = summary_result["extracted_info"]["is_telemedical"]
+            else:
+                # If neither transcription nor diarization is requested
+                logger.info("No processing requested - use 'diarize' and/or 'transcribe' parameters")
+                result["message"] = "No processing performed. Use 'diarize=true' and/or 'transcribe=true' parameters to process audio."
 
             return jsonify(result)
 
@@ -365,6 +430,7 @@ def regenerate_summary():
             speaker_column=speaker_column,
             force_process=force_process
         )
+        print(summary_result)
 
         # Return regenerated summary
         result = {
@@ -376,7 +442,7 @@ def regenerate_summary():
                 }
             }
         }
-        
+        print(result)
         # Add telemedical flag to the top level for easy access
         if "is_telemedical" in summary_result["extracted_info"]:
             result["is_telemedical"] = summary_result["extracted_info"]["is_telemedical"]

@@ -1,10 +1,3 @@
-"""
-Smart HIPAA Compliance Module
-
-This module provides enterprise-grade HIPAA compliance capabilities with intelligent
-redaction that preserves clinical readability while protecting patient privacy.
-"""
-
 import re
 import logging
 from typing import Dict, Any, List, Set, Tuple, Optional
@@ -15,10 +8,6 @@ import json
 logger = logging.getLogger(__name__)
 
 class SmartHIPAAProcessor:
-    """
-    Enterprise-grade HIPAA compliance processor with intelligent redaction capabilities.
-    """
-    
     # PHI categories based on HIPAA Safe Harbor method (18 identifiers)
     PHI_CATEGORIES = {
         "names": {

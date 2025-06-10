@@ -1,16 +1,16 @@
-"""
-Enterprise Medical Summarizer
-
-An enterprise-grade integration module that combines advanced NLP, HIPAA compliance,
-and professional clinical documentation to produce high-quality medical summaries.
-"""
-
 import os
 import re
 import json
 import logging
 from typing import Dict, Any, Optional, List, Union
 from datetime import datetime
+
+# Import dotenv for environment variables
+try:
+    from dotenv import load_dotenv
+    load_dotenv()  # Load environment variables from .env file
+except ImportError:
+    pass  # dotenv is optional
 
 # Import specialized modules
 from .base_summarizer import BaseSummarizer
@@ -19,22 +19,16 @@ from .clinical_narrative import ClinicalNarrativeGenerator
 
 # Import Gemini integration
 try:
-    from google import genai
+    import google.generativeai as genai
     GEMINI_AVAILABLE = True
 except ImportError:
     GEMINI_AVAILABLE = False
 
 class EnterpriseSummarizer(BaseSummarizer):
-    """
-    Enterprise-grade medical summarizer that integrates multiple advanced
-    capabilities including LLM-powered analysis, HIPAA compliance, and
-    professional clinical documentation.
-    """
-    
     def __init__(
         self,
         api_key: Optional[str] = None,
-        model_name: str = "gemini-2.0-pro",
+        model_name: str = "gemini-1.5-flash",
         logger: Optional[logging.Logger] = None,
         temperature: float = 0.2,
         max_output_tokens: int = 4096,
@@ -56,7 +50,24 @@ class EnterpriseSummarizer(BaseSummarizer):
         super().__init__(logger)
         
         self.model_name = model_name
-        self.api_key = api_key or os.environ.get("GOOGLE_API_KEY")
+        
+        # Try multiple ways to get the API key
+        self.api_key = None
+        if api_key:  # First priority: explicitly passed API key
+            self.api_key = api_key
+        elif os.environ.get("GEMINI_API_KEY"):  # Second priority: GEMINI_API_KEY environment variable
+            self.api_key = os.environ.get("GEMINI_API_KEY")
+        elif os.environ.get("GOOGLE_API_KEY"):  # Third priority: GOOGLE_API_KEY environment variable
+            self.api_key = os.environ.get("GOOGLE_API_KEY")
+        elif os.path.exists(os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), '.env')):  # Fourth priority: try to load from .env again
+            try:
+                from dotenv import load_dotenv
+                load_dotenv(os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), '.env'))
+                self.api_key = os.environ.get("GOOGLE_API_KEY")
+            except ImportError:
+                pass
+        
+        self._log(f"API key loaded: {self.api_key is not None}")
         self.temperature = temperature
         self.max_output_tokens = max_output_tokens
         self.enforce_hipaa = enforce_hipaa
@@ -68,11 +79,35 @@ class EnterpriseSummarizer(BaseSummarizer):
         
         # Initialize LLM client
         self.llm_available = False
+        self._log(f"GEMINI_AVAILABLE: {GEMINI_AVAILABLE}")
+        self._log(f"API key present: {self.api_key is not None}")
+        
         if GEMINI_AVAILABLE and self.api_key:
             try:
                 self._log(f"Initializing LLM client with model: {model_name}")
-                self.client = genai.Client(api_key=self.api_key)
-                self.llm_available = True
+                # Configure the API key
+                genai.configure(api_key=self.api_key)
+                self._log("Client initialized successfully")
+
+                # Test the model with a simple prompt
+                try:
+                    self._log(f"Testing model {model_name} with a simple prompt")
+                    model = genai.GenerativeModel(model_name)
+                    response = model.generate_content("Hello")
+                    self._log("Model test successful")
+                    self.llm_available = True
+                except Exception as model_error:
+                    self._log(f"Error testing model: {model_error}", level="error")
+                    # Try with a fallback model
+                    try:
+                        self._log("Trying fallback model gemini-1.5-flash")
+                        model = genai.GenerativeModel("gemini-1.5-flash")
+                        response = model.generate_content("Hello")
+                        self._log("Fallback model test successful")
+                        self.model_name = "gemini-1.5-flash"  # Update the model name
+                        self.llm_available = True
+                    except Exception as fallback_error:
+                        self._log(f"Error with fallback model: {fallback_error}", level="error")
             except Exception as e:
                 self._log(f"Error initializing LLM client: {e}", level="error")
     
@@ -392,9 +427,9 @@ class EnterpriseSummarizer(BaseSummarizer):
         return extracted_info
     
     def _generate_llm_summary(self, 
-                             conversation_text: str, 
-                             extracted_info: Dict[str, Any],
-                             custom_prompt: Optional[str] = None) -> str:
+                              conversation_text: str, 
+                              extracted_info: Dict[str, Any],
+                              custom_prompt: Optional[str] = None) -> str:
         """
         Generate a summary using LLM.
         
@@ -406,6 +441,11 @@ class EnterpriseSummarizer(BaseSummarizer):
         Returns:
             Generated summary
         """
+        # Debug information about the LLM availability
+        self._log(f"LLM availability check - self.llm_available: {self.llm_available}")
+        self._log(f"GEMINI_AVAILABLE: {GEMINI_AVAILABLE}")
+        self._log(f"API key present: {self.api_key is not None}")
+        
         if not self.llm_available:
             self._log("LLM not available, using template-based summary", level="warning")
             return self._generate_fallback_summary(conversation_text, extracted_info)
@@ -414,24 +454,46 @@ class EnterpriseSummarizer(BaseSummarizer):
             # Prepare the prompt
             prompt = custom_prompt if custom_prompt else self._prepare_default_prompt(conversation_text, extracted_info)
             
-            self._log("Sending prompt to LLM")
+            self._log(f"Sending prompt to LLM using model: {self.model_name}")
             
-            # Generate content
-            response = self.client.models.generate_content(
-                model=self.model_name,
-                contents=prompt
-            )
-            
-            # Extract the text
-            if hasattr(response, 'text'):
-                return response.text
-            elif hasattr(response, 'parts'):
-                parts_text = ''.join([part.text for part in response.parts if hasattr(part, 'text')])
-                if parts_text:
-                    return parts_text
-                    
-            # Fall back to string representation
-            return str(response)
+            # Generate content using the model
+            try:
+                model = genai.GenerativeModel(self.model_name)
+                response = model.generate_content(prompt)
+
+                # Extract the text
+                if hasattr(response, 'text'):
+                    return response.text
+                elif hasattr(response, 'parts'):
+                    parts_text = ''.join([part.text for part in response.parts if hasattr(part, 'text')])
+                    if parts_text:
+                        return parts_text
+
+                # Fall back to string representation
+                return str(response)
+            except Exception as model_error:
+                self._log(f"Error with model {self.model_name}: {model_error}. Trying fallback model.", level="error")
+
+                # Try with a fallback model
+                try:
+                    fallback_model = "gemini-1.5-flash"
+                    self._log(f"Using fallback model: {fallback_model}")
+                    model = genai.GenerativeModel(fallback_model)
+                    response = model.generate_content(prompt)
+
+                    # Extract the text
+                    if hasattr(response, 'text'):
+                        return response.text
+                    elif hasattr(response, 'parts'):
+                        parts_text = ''.join([part.text for part in response.parts if hasattr(part, 'text')])
+                        if parts_text:
+                            return parts_text
+
+                    # Fall back to string representation
+                    return str(response)
+                except Exception as fallback_error:
+                    self._log(f"Error with fallback model: {fallback_error}", level="error")
+                    raise
             
         except Exception as e:
             self._log(f"Error generating LLM summary: {e}", level="error")

@@ -6,13 +6,6 @@ from typing import Dict, Any, Optional, Union, List
 
 
 class BaseSummarizer(abc.ABC):
-    """
-    Abstract base class for all summarizers defining the common interface.
-    
-    All summarizer implementations should inherit from this class and
-    implement the abstract methods.
-    """
-    
     def __init__(self, logger: Optional[logging.Logger] = None):
         """
         Initialize a base summarizer.

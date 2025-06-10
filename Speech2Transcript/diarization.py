@@ -1,74 +1,186 @@
-import torch
-import numpy as np
+import os
+import io
 import pandas as pd
-from pyannote.audio import Pipeline
-from typing import Optional, Union
+import numpy as np
+from google.cloud import speech
+from pydub import AudioSegment
+from typing import Optional, Union, Dict, Any
+import warnings
 
 from Speech2Transcript.utils import segments_to_df
 
-class DiarizationPipeline:
+class GoogleDiarizationPipeline:
     """
-    A class to handle speaker diarization using the specified model.
+    Google Speech-to-Text based diarization pipeline.
+    Uses Google Cloud Speech-to-Text API for both transcription and speaker diarization.
     """
     def __init__(
             self,
-            model_name: str = "pyannote/speaker-diarization-3.1",
-            use_auth_token: Optional[str] = None,
-            device: Optional[Union[str, torch.device]] = None,
+            language: str = "en-US",
+            device: Optional[str] = None,  # Kept for compatibility but not used
     ):
-        if device is None:
-            device = "cuda" if torch.cuda.is_available() else "cpu"
-        
-        if isinstance(device, str):
-            device = torch.device(device)
-        
-        self.model = Pipeline.from_pretrained(
-            model_name,
-            use_auth_token=use_auth_token
-        ).to(device)
+        # Initialize Google Speech-to-Text client
+        self.client = speech.SpeechClient()
+        self.language = language
+
+        # For compatibility with original implementation
+        self.device = "cloud"  # Processing happens in the cloud
 
     def process_audio(
             self,
-            audio: Union[str, np.ndarray], 
+            audio: Union[str, np.ndarray],
             sample_rate: Optional[int] = None,
             num_speakers: Optional[int] = None,
-            min_speakers: Optional[int] = None,
-            max_speakers: Optional[int] = None
-      ) -> pd.DataFrame:                                    # expected ruturn type is a DataFrame
-          
+            min_speakers: Optional[int] = 2,
+            max_speakers: Optional[int] = 6
+    ) -> pd.DataFrame:
+        """
+        Process audio for diarization using Google Speech-to-Text API.
+
+        Args:
+            audio: Path to audio file or numpy array
+            sample_rate: Sample rate (required if audio is numpy array)
+            num_speakers: Exact number of speakers (optional)
+            min_speakers: Minimum number of speakers
+            max_speakers: Maximum number of speakers
+
+        Returns:
+            DataFrame with diarization results
+        """
+        # Prepare audio content
         if isinstance(audio, str):
-            audio_input = audio
+            # Load audio file
+            with io.open(audio, "rb") as audio_file:
+                content = audio_file.read()
+
+            # Determine audio format from file extension
+            audio_format = speech.RecognitionConfig.AudioEncoding.LINEAR16  # Default
+            if audio.lower().endswith('.mp3'):
+                audio_format = speech.RecognitionConfig.AudioEncoding.MP3
+            elif audio.lower().endswith('.flac'):
+                audio_format = speech.RecognitionConfig.AudioEncoding.FLAC
+            elif audio.lower().endswith('.wav'):
+                audio_format = speech.RecognitionConfig.AudioEncoding.LINEAR16
+
+            # Get sample rate if not provided
+            if sample_rate is None:
+                try:
+                    import soundfile as sf
+                    info = sf.info(audio)
+                    sample_rate = info.samplerate
+                except (ImportError, RuntimeError):
+                    try:
+                        audio_segment = AudioSegment.from_file(audio)
+                        sample_rate = audio_segment.frame_rate
+                    except Exception:
+                        sample_rate = 44100  # Default
         else:
-            audio_input = {
-                "waveform": torch.from_numpy(audio[None, :]),
-                "sample_rate": sample_rate
-            }
-        
-        segment = self.model(
-            audio_input,
-            num_speakers=num_speakers,
-            min_speakers=min_speakers,
-            max_speakers=max_speakers
+            # Convert numpy array to bytes
+            if sample_rate is None:
+                raise ValueError("sample_rate is required when passing an audio array")
+
+            # Convert to 16-bit PCM
+            audio_array = (audio * 32767).astype(np.int16)
+            content = audio_array.tobytes()
+            audio_format = speech.RecognitionConfig.AudioEncoding.LINEAR16
+
+        # Configure diarization
+        diarization_config = speech.SpeakerDiarizationConfig(
+            enable_speaker_diarization=True,
+            min_speaker_count=min_speakers,
+            max_speaker_count=max_speakers,
         )
 
-        # Extract segments from the diarization result
-        segment_data = [(segment, label, speaker) for segment, label, speaker in segment.itertracks(yield_label=True)]
+        # Configure recognition request
+        config = speech.RecognitionConfig(
+            encoding=audio_format,
+            sample_rate_hertz=sample_rate,
+            language_code=self.language,
+            enable_word_time_offsets=True,
+            enable_automatic_punctuation=True,
+            use_enhanced=True,
+            model="latest_long",
+            diarization_config=diarization_config
+        )
 
-        # Check if any segments were found
-        if not segment_data:
-            # Return empty DataFrame with proper structure if no segments found
-            print("Warning: No speech segments detected in audio. This could be due to:")
-            print("- Audio file is too short or silent")
-            print("- Audio quality is too poor")
-            print("- No speech detected by the diarization model")
-            import pandas as pd
-            empty_df = pd.DataFrame(columns=['segment', 'label', 'speaker', 'start', 'end'])
-            # Add a dummy row to prevent errors in downstream processing
-            # This will be filtered out later if needed
-            return empty_df
+        # Create recognition audio
+        audio_obj = speech.RecognitionAudio(content=content)
 
-        segments, labels, speakers = zip(*segment_data)
+        # Perform recognition
+        try:
+            response = self.client.recognize(config=config, audio=audio_obj)
+        except Exception as e:
+            warnings.warn(f"Google Speech-to-Text API error: {e}")
+            return pd.DataFrame(columns=['segment', 'label', 'speaker', 'start', 'end'])
 
-        diarization_df = segments_to_df(segments, labels, speakers)
+        # Process results to extract speaker segments
+        segments = []
 
-        return diarization_df
+        for i, result in enumerate(response.results):
+            alternative = result.alternatives[0]
+
+            if hasattr(alternative, 'words') and alternative.words:
+                # Group words by speaker
+                current_speaker = None
+                current_segment = None
+
+                for word_info in alternative.words:
+                    speaker_tag = getattr(word_info, 'speaker_tag', 0)
+                    speaker_id = f"SPEAKER_{speaker_tag}"
+
+                    start_time = word_info.start_time.total_seconds()
+                    end_time = word_info.end_time.total_seconds()
+
+                    if current_speaker != speaker_id:
+                        # Save previous segment if exists
+                        if current_segment is not None:
+                            segments.append(current_segment)
+
+                        # Start new segment
+                        current_segment = {
+                            'segment': len(segments),
+                            'label': 'SPEAKER',
+                            'speaker': speaker_id,
+                            'start': start_time,
+                            'end': end_time
+                        }
+                        current_speaker = speaker_id
+                    else:
+                        # Extend current segment
+                        current_segment['end'] = end_time
+
+                # Add the last segment
+                if current_segment is not None:
+                    segments.append(current_segment)
+
+        # If no segments found, return empty DataFrame
+        if not segments:
+            warnings.warn("No speech segments detected in audio")
+            return pd.DataFrame(columns=['segment', 'label', 'speaker', 'start', 'end'])
+
+        return pd.DataFrame(segments)
+
+# For backward compatibility, keep the original class name
+class DiarizationPipeline(GoogleDiarizationPipeline):
+    """
+    Backward-compatible wrapper for GoogleDiarizationPipeline.
+    Maintains the same interface as the original pyannote-based implementation.
+    """
+    def __init__(
+            self,
+            model_name: str = "pyannote/speaker-diarization-3.1",  # Keep original param name for compatibility
+            use_auth_token: Optional[str] = None,  # Keep original param for compatibility
+            device: Optional[str] = None,
+    ):
+        # Map old parameters to new ones
+        super().__init__(
+            language="en-US",  # Default language
+            device=device
+        )
+        # Store original parameters for reference
+        self.original_model_name = model_name
+        self.original_use_auth_token = use_auth_token
+
+
+# Alias for backward compatibility
+LightDiarizationPipeline = GoogleDiarizationPipeline
